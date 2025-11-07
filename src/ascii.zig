@@ -29,6 +29,19 @@ pub const RenderMode = enum {
     // brightness_dithered, // Future: brightness + dithering
 };
 
+/// Braille dot positions for 2x4 grid (compile-time constant)
+/// Maps each of 8 dots to their (x, y) position within the 2x4 Braille cell
+const BRAILLE_DOT_POSITIONS = [8][2]u32{
+    .{ 0, 0 }, // Dot 1 (bit 0x01)
+    .{ 0, 1 }, // Dot 2 (bit 0x02)
+    .{ 0, 2 }, // Dot 3 (bit 0x04)
+    .{ 1, 0 }, // Dot 4 (bit 0x08)
+    .{ 1, 1 }, // Dot 5 (bit 0x10)
+    .{ 1, 2 }, // Dot 6 (bit 0x20)
+    .{ 0, 3 }, // Dot 7 (bit 0x40)
+    .{ 1, 3 }, // Dot 8 (bit 0x80)
+};
+
 /// Braille pattern converter (U+2800-U+28FF)
 /// Each Braille character represents a 2x4 pixel grid
 pub const BrailleConverter = struct {
@@ -84,6 +97,10 @@ pub const BrailleConverter = struct {
         const output_width = target_cols;
         const output_height = target_rows;
 
+        // Calculate scaling factors once per frame (from output space to source image space)
+        const scale_x = @as(f32, @floatFromInt(image.width)) / @as(f32, @floatFromInt(output_width * 2));
+        const scale_y = @as(f32, @floatFromInt(image.height)) / @as(f32, @floatFromInt(output_height * 4));
+
         // Each Braille char is 3 bytes in UTF-8, plus newline per row
         const bytes_per_row = output_width * 3 + 1;
         const total_bytes = output_height * bytes_per_row;
@@ -95,7 +112,7 @@ pub const BrailleConverter = struct {
         while (row < output_height) : (row += 1) {
             var col: u32 = 0;
             while (col < output_width) : (col += 1) {
-                const braille_char = self.pixelBlockToBraille(image, col, row, output_width, output_height);
+                const braille_char = self.pixelBlockToBraille(image, col, row, scale_x, scale_y);
                 buf_offset += encodeUtf8Braille(braille_char, buffer[buf_offset..]);
             }
 
@@ -108,32 +125,24 @@ pub const BrailleConverter = struct {
 
     /// Convert 2x4 pixel block to Braille character
     /// col, row: position in output Braille grid
-    /// output_width, output_height: total output dimensions in Braille characters
-    fn pixelBlockToBraille(self: *Self, image: camera.Image, col: u32, row: u32, output_width: u32, output_height: u32) u21 {
+    /// scale_x, scale_y: pre-calculated scaling factors from output to source image space
+    fn pixelBlockToBraille(
+        self: *Self,
+        image: camera.Image,
+        col: u32,
+        row: u32,
+        scale_x: f32,
+        scale_y: f32,
+    ) u21 {
         // Braille pattern bit positions:
         // 1 4   (0x01 0x08)
         // 2 5   (0x02 0x10)
         // 3 6   (0x04 0x20)
         // 7 8   (0x40 0x80)
 
-        const dot_positions = [8][2]u32{
-            .{ 0, 0 }, // Dot 1 (bit 0x01)
-            .{ 0, 1 }, // Dot 2 (bit 0x02)
-            .{ 0, 2 }, // Dot 3 (bit 0x04)
-            .{ 1, 0 }, // Dot 4 (bit 0x08)
-            .{ 1, 1 }, // Dot 5 (bit 0x10)
-            .{ 1, 2 }, // Dot 6 (bit 0x20)
-            .{ 0, 3 }, // Dot 7 (bit 0x40)
-            .{ 1, 3 }, // Dot 8 (bit 0x80)
-        };
-
         var pattern: u8 = 0;
 
-        // Calculate scaling factors (from output space to source image space)
-        const scale_x = @as(f32, @floatFromInt(image.width)) / @as(f32, @floatFromInt(output_width * 2));
-        const scale_y = @as(f32, @floatFromInt(image.height)) / @as(f32, @floatFromInt(output_height * 4));
-
-        for (dot_positions, 0..) |pos, i| {
+        for (BRAILLE_DOT_POSITIONS, 0..) |pos, i| {
             // Calculate position in output pixel space (each Braille char = 2x4 pixels)
             const out_x = col * 2 + pos[0];
             const out_y = row * 4 + pos[1];

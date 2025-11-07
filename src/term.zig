@@ -49,13 +49,10 @@ pub fn calculateBrailleRows(image: camera.Image, target_cols: u32) u32 {
 }
 
 /// Clear the terminal screen
-pub fn clearScreen() !void {
-    var buffer: [32]u8 = undefined;
-    var writer = std.fs.File.stdout().writer(&buffer);
-    const stdout = &writer.interface;
-    // ANSI escape code to clear screen
+/// Accepts any writer type (typically a buffered stdout writer)
+pub fn clearScreen(stdout: anytype) !void {
+    // ANSI escape code to clear screen and move cursor to home
     try stdout.writeAll("\x1B[2J\x1B[H");
-    try stdout.flush();
 }
 
 /// Move cursor to top-left

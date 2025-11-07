@@ -31,6 +31,11 @@ pub fn main() !void {
         _ = try cam.captureFrame();
     }
 
+    // Setup buffered stdout writer (reused across frames)
+    var stdout_buffer: [8192]u8 = undefined;
+    var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+    const stdout = &stdout_writer.interface;
+
     // Continuous frame loop
     while (true) {
         // Start timing
@@ -51,12 +56,9 @@ pub fn main() !void {
         defer allocator.free(braille_text);
 
         // Clear screen right before rendering
-        try term.clearScreen();
+        try term.clearScreen(stdout);
 
         // Print the frame
-        var stdout_buffer: [8192]u8 = undefined;
-        var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
-        const stdout = &stdout_writer.interface;
         try stdout.writeAll(braille_text);
 
         // Calculate timings
