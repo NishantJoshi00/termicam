@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-`term-cam` is a terminal-based camera viewer written in Zig that captures frames from a macOS camera and renders them as Braille patterns in the terminal. It uses Objective-C++ for camera integration with AVFoundation and implements real-time ASCII art rendering with edge detection.
+`termicam` is a terminal-based camera viewer written in Zig that captures frames from a macOS camera and renders them as Braille patterns in the terminal. It uses Objective-C++ for camera integration with AVFoundation and implements real-time ASCII art rendering with edge detection.
 
 ## Build System & Commands
 
@@ -27,7 +27,7 @@ zig build --help           # Show all build options
 
 ### Module Structure
 
-The project is organized as a library module (`term_cam`) plus an executable:
+The project is organized as a library module (`termicam`) plus an executable:
 
 - **Library module** (`src/root.zig`): Exposes public API that consumers can import
 - **Executable** (`src/main.zig`): CLI application that imports and uses the library module

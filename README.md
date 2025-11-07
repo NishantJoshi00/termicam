@@ -1,4 +1,4 @@
-# term-cam
+# termicam
 
 A real-time camera viewer for your terminal. Captures video from your macOS camera and renders it as beautiful Braille patterns with live FPS stats.
 
@@ -24,7 +24,7 @@ A real-time camera viewer for your terminal. Captures video from your macOS came
 ```bash
 # Clone the repository
 git clone <repository-url>
-cd term-cam
+cd termicam
 
 # Build the project
 zig build
@@ -33,7 +33,7 @@ zig build
 zig build run
 ```
 
-The executable will be output to `zig-out/bin/term_cam`.
+The executable will be output to `zig-out/bin/termicam`.
 
 ## Usage
 
@@ -46,7 +46,7 @@ zig build run
 Or run the compiled binary directly:
 
 ```bash
-./zig-out/bin/term_cam
+./zig-out/bin/termicam
 ```
 
 On first run, macOS will prompt you to grant camera permissions to your terminal application.
@@ -55,7 +55,7 @@ Press `Ctrl+C` to exit.
 
 ## How It Works
 
-term-cam uses a three-stage pipeline:
+termicam uses a three-stage pipeline:
 
 1. **Camera Capture**: Objective-C++ wrapper around AVFoundation captures frames as grayscale images
 2. **Braille Conversion**: Each 2×4 pixel block is analyzed and converted to a Unicode Braille character (U+2800-U+28FF)

@@ -1,5 +1,5 @@
 const std = @import("std");
-const term_cam = @import("term_cam");
+const termicam = @import("termicam");
 const camera = @import("camera.zig");
 const ascii = @import("ascii.zig");
 const term = @import("term.zig");
