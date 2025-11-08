@@ -1,8 +1,8 @@
 const std = @import("std");
 const termicam = @import("termicam");
-const camera = @import("camera.zig");
-const ascii = @import("ascii.zig");
-const term = @import("term.zig");
+const camera = @import("termicam").camera;
+const ascii = @import("termicam").ascii;
+const term = @import("termicam").term;
 const builtin = @import("builtin");
 
 pub fn main() !void {

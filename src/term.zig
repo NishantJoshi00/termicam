@@ -1,5 +1,5 @@
 const std = @import("std");
-const camera = @import("camera.zig");
+const camera = @import("camera");
 
 /// Terminal dimensions
 pub const TermSize = struct {
@@ -65,7 +65,11 @@ pub fn moveCursorHome() !void {
 }
 
 test "terminal size" {
-    const size = try getTermSize();
+    // Skip test if not running in a real terminal
+    const size = getTermSize() catch |err| {
+        if (err == error.TermSizeUnavailable) return error.SkipZigTest;
+        return err;
+    };
     try std.testing.expect(size.cols > 0);
     try std.testing.expect(size.rows > 0);
 }

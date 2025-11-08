@@ -1,5 +1,5 @@
 const std = @import("std");
-const camera = @import("camera.zig");
+const camera = @import("camera");
 
 /// Generic converter interface for pluggable ASCII/Braille rendering backends
 pub const Converter = struct {
