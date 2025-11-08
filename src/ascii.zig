@@ -45,6 +45,7 @@ const BRAILLE_DOT_POSITIONS = [8][2]u32{
 /// Braille pattern converter (U+2800-U+28FF)
 /// Each Braille character represents a 2x4 pixel grid
 pub const BrailleConverter = struct {
+    allocator: std.mem.Allocator,
     mode: RenderMode,
     edge_threshold: u8, // Threshold for edge detection gradient (0-255)
     invert: bool, // Invert output (light dots on dark vs dark dots on light)
@@ -52,9 +53,10 @@ pub const BrailleConverter = struct {
     const Self = @This();
 
     /// Create a new Braille converter
-    pub fn init(mode: RenderMode, edge_threshold: u8, invert: bool) !*Self {
-        const self = try std.heap.page_allocator.create(Self);
+    pub fn init(allocator: std.mem.Allocator, mode: RenderMode, edge_threshold: u8, invert: bool) !*Self {
+        const self = try allocator.create(Self);
         self.* = .{
+            .allocator = allocator,
             .mode = mode,
             .edge_threshold = edge_threshold,
             .invert = invert,
@@ -80,7 +82,8 @@ pub const BrailleConverter = struct {
 
     fn deinitImpl(ptr: *anyopaque) void {
         const self: *Self = @ptrCast(@alignCast(ptr));
-        std.heap.page_allocator.destroy(self);
+        const allocator = self.allocator;
+        allocator.destroy(self);
     }
 
     /// Convert camera image to Braille text
@@ -278,8 +281,8 @@ test "Braille converter basic" {
         .bytes_per_row = 2,
     };
 
-    var conv = try BrailleConverter.init(.brightness, 128, false);
-    defer std.heap.page_allocator.destroy(conv);
+    var conv = try BrailleConverter.init(allocator, .brightness, 128, false);
+    defer conv.converter().deinit();
 
     // Convert to 1x1 Braille character
     const result = try conv.imageToText(test_image, 1, 1, allocator);

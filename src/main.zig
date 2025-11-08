@@ -22,7 +22,7 @@ pub fn main() !void {
     defer cam.close();
 
     // Initialize Braille converter with edge detection
-    var converter = try ascii.BrailleConverter.init(.edge_detection, 2, false);
+    var converter = try ascii.BrailleConverter.init(allocator, .edge_detection, 2, false);
     defer converter.converter().deinit();
 
     // Warmup: Capture and discard a few frames to let camera auto-expose
@@ -61,13 +61,12 @@ pub fn main() !void {
         // Print the frame
         try stdout.writeAll(braille_text);
 
-        // Calculate timings
-        const capture_ms = @as(f64, @floatFromInt(capture_time - start_time)) / 1_000_000.0;
-        const convert_ms = @as(f64, @floatFromInt(convert_end - convert_start)) / 1_000_000.0;
-        const total_ms = @as(f64, @floatFromInt(convert_end - start_time)) / 1_000_000.0;
-        const fps = 1000.0 / total_ms;
-
+        // Print debug timing info (only in debug builds)
         if (builtin.mode == .Debug) {
+            const capture_ms = @as(f64, @floatFromInt(capture_time - start_time)) / 1_000_000.0;
+            const convert_ms = @as(f64, @floatFromInt(convert_end - convert_start)) / 1_000_000.0;
+            const total_ms = @as(f64, @floatFromInt(convert_end - start_time)) / 1_000_000.0;
+            const fps = 1000.0 / total_ms;
             try stdout.print("\nFPS: {d:.1} | Capture: {d:.1}ms | Convert: {d:.1}ms | Total: {d:.1}ms\n", .{ fps, capture_ms, convert_ms, total_ms });
         }
 
