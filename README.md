@@ -4,103 +4,85 @@
   <img src="assets/logo.png" alt="termicam logo" width="200">
 </p>
 
-A real-time camera viewer for your terminal. Captures video from your macOS camera and renders it as beautiful Braille patterns with live FPS stats.
+A real-time camera viewer for your terminal. Watch yourself rendered as beautiful Braille patterns, right where you code.
 
-## Features
+## What It Does
 
-- **Real-time camera capture** - Uses AVFoundation for native macOS camera access
-- **Braille rendering** - Each character represents a 2×4 pixel grid for high-resolution terminal graphics
-- **Multiple render modes**:
-  - Edge detection (gradient-based) - produces sharp, sketch-like output
-  - Brightness threshold - simple intensity-based rendering
-- **Automatic aspect ratio preservation** - Maintains 1:1 pixel aspect ratio to prevent distortion
-- **Performance metrics** - Live FPS, capture time, and conversion time display
-- **Terminal-aware** - Automatically adapts to your terminal size
+termicam captures video from your macOS camera and transforms it into live terminal graphics using Unicode Braille characters. Each character encodes a 2×4 pixel grid, giving you 8× the resolution of traditional ASCII art. The result is a surprisingly detailed sketch-like representation that updates in real-time.
+
+The edge detection algorithm emphasizes gradients and boundaries, producing clean, high-contrast output that looks great even on small terminal windows.
 
 ## Requirements
 
-- **macOS** (uses AVFoundation framework)
-- **Zig 0.15.1 or later**
-- Camera permissions granted to Terminal.app
+- macOS (uses AVFoundation framework)
+- Zig 0.15.1 or later
+- Camera permissions for your terminal application
 
-## Installation
+**Recommended:** [Ghostty terminal](https://ghostty.org) for the best rendering quality and performance.
+
+## Quick Start
 
 ```bash
-# Clone the repository
 git clone <repository-url>
 cd termicam
-
-# Build the project
-zig build
-
-# Run
 zig build run
 ```
 
-The executable will be output to `zig-out/bin/termicam`.
+On first run, macOS will prompt you to grant camera permissions. Press `Ctrl+C` to exit.
 
-## Usage
+## Build Options
 
-Simply run the application:
+termicam supports several compile-time configuration options:
 
 ```bash
-zig build run
+# Capture strategy (default: pipelined)
+zig build run -Dstrategy=direct      # Simple blocking capture
+zig build run -Dstrategy=pipelined   # Double-buffered background thread
+
+# Edge detection sensitivity 0-255 (default: 2, lower = more sensitive)
+zig build run -Dedge-threshold=50
+
+# Invert output (light dots on dark vs dark dots on light)
+zig build run -Dinvert=true
+
+# Camera warmup frames for auto-exposure (default: 3)
+zig build run -Dwarmup-frames=5
 ```
 
-Or run the compiled binary directly:
+Build for release with full optimizations:
 
 ```bash
+zig build -Doptimize=ReleaseFast
 ./zig-out/bin/termicam
 ```
 
-On first run, macOS will prompt you to grant camera permissions to your terminal application.
-
-Press `Ctrl+C` to exit.
-
 ## How It Works
 
-termicam uses a three-stage pipeline:
+termicam operates through a three-stage pipeline:
 
-1. **Camera Capture**: Objective-C++ wrapper around AVFoundation captures frames as grayscale images
-2. **Braille Conversion**: Each 2×4 pixel block is analyzed and converted to a Unicode Braille character (U+2800-U+28FF)
-3. **Terminal Rendering**: ANSI escape codes clear the screen and display the converted frame
+1. **Capture**: An Objective-C++ wrapper around AVFoundation pulls frames from your camera as grayscale images
+2. **Convert**: Each 2×4 pixel block is analyzed for edge gradients and mapped to a Unicode Braille character (U+2800-U+28FF)
+3. **Render**: ANSI escape codes position the cursor and draw the frame, with optional FPS statistics in debug builds
 
-The edge detection mode analyzes gradient strength at each pixel position, creating a sketch-like effect that emphasizes features and boundaries.
+The pipelined capture strategy runs frame acquisition in a background thread with double buffering, allowing the main thread to process and render the previous frame while the next one is being captured. This architectural choice eliminates capture latency from the critical path.
 
 ## Development
 
 ```bash
-# Run tests
+# Run the test suite
 zig build test
-
-# Build with optimizations
-zig build -Doptimize=ReleaseFast
 
 # Clean build artifacts
 rm -rf zig-out .zig-cache
 ```
 
-## Project Structure
+## Technical Notes
 
-```
-src/
-├── main.zig           - Application entry point and main loop
-├── camera.zig         - Zig FFI bindings for camera
-├── camera_wrapper.h   - C API header
-├── camera_wrapper.mm  - Objective-C++ AVFoundation wrapper
-├── ascii.zig          - Braille rendering engine with pluggable modes
-├── term.zig           - Terminal utilities (size detection, ANSI codes)
-└── root.zig           - Library module root
-```
+termicam demonstrates several systems programming patterns in Zig:
 
-## Technical Details
+- **FFI layering**: C API boundary between Objective-C++ (AVFoundation) and Zig
+- **Vtable interfaces**: Generic `Converter` and `FrameSource` abstractions enable pluggable backends
+- **Zero-copy rendering**: Buffered stdout with pre-allocated buffers minimizes allocations
+- **Aspect ratio preservation**: Automatic calculation maintains 1:1 pixel scaling regardless of terminal dimensions
 
-- Written in **Zig** for systems programming performance
-- Uses **Objective-C++** for macOS AVFoundation camera access
-- Implements **vtable pattern** for pluggable rendering backends
-- Uses **buffered I/O** for efficient terminal rendering
-- Unicode **Braille patterns** provide 8× better resolution than ASCII
-
-## Credits
-
-Created with Zig and macOS AVFoundation.
+The modular architecture separates camera capture, rendering logic, and terminal utilities into independent modules with clear dependency boundaries. Each module includes comprehensive tests.

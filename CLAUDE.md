@@ -18,6 +18,22 @@ zig build test             # Run all tests
 zig build --help           # Show all build options
 ```
 
+**Build-time configuration options:**
+```bash
+# Capture strategy (default: pipelined)
+zig build run -Dstrategy=direct      # Blocking capture
+zig build run -Dstrategy=pipelined   # Double-buffered background thread
+
+# Edge detection threshold 0-255 (default: 2, lower = more sensitive)
+zig build run -Dedge-threshold=50
+
+# Invert Braille output (default: false)
+zig build run -Dinvert=true
+
+# Camera warmup frames (default: 3)
+zig build run -Dwarmup-frames=5
+```
+
 **Development:**
 - Pass arguments to the app: `zig build run -- arg1 arg2`
 - Build with specific optimization: `zig build -Doptimize=ReleaseFast`
@@ -53,6 +69,9 @@ The project is organized as a library module (`termicam`) plus an executable:
 - Initializes camera with warmup frames for auto-exposure
 - Continuous loop: capture frame → convert to Braille → render with FPS stats
 - Uses buffered stdout for performance
+- Supports two capture strategies:
+  - **DirectCapture**: Simple blocking capture (original implementation)
+  - **PipelinedCapture**: Double-buffered background thread for higher FPS
 
 ### Key Design Patterns
 
@@ -63,8 +82,13 @@ The project is organized as a library module (`termicam`) plus an executable:
 
 **Pluggable Rendering**: Generic `Converter` interface allows swapping rendering algorithms
 - Uses vtable pattern (`ptr: *anyopaque` + `vtable: *const VTable`)
-- Currently implements edge detection and brightness modes
+- Currently implements edge detection mode
 - Easy to add new rendering backends (e.g., dithering)
+
+**Pluggable Frame Sources**: Generic `FrameSource` interface allows swapping capture strategies
+- Uses vtable pattern for different capture implementations
+- DirectCapture: Simple blocking calls
+- PipelinedCapture: Background thread with double buffering for improved performance
 
 **Aspect Ratio Preservation**: `term.calculateBrailleRows()` maintains 1:1 pixel aspect ratio
 - Takes image dimensions and target column count
