@@ -5,6 +5,206 @@ const ascii = @import("termicam").ascii;
 const term = @import("termicam").term;
 const builtin = @import("builtin");
 
+/// Generic frame source interface for pluggable capture strategies
+const FrameSource = struct {
+    ptr: *anyopaque,
+    vtable: *const VTable,
+
+    pub const VTable = struct {
+        getNextFrame: *const fn (ptr: *anyopaque) camera.Image,
+        deinit: *const fn (ptr: *anyopaque) void,
+    };
+
+    /// Get the next frame from this source
+    pub fn getNextFrame(self: FrameSource) camera.Image {
+        return self.vtable.getNextFrame(self.ptr);
+    }
+
+    /// Clean up frame source resources
+    pub fn deinit(self: FrameSource) void {
+        self.vtable.deinit(self.ptr);
+    }
+};
+
+/// Direct (blocking) frame capture - original implementation
+const DirectCapture = struct {
+    camera: *camera.Camera,
+    allocator: std.mem.Allocator,
+
+    const Self = @This();
+
+    pub fn init(allocator: std.mem.Allocator, cam: *camera.Camera) !*Self {
+        const self = try allocator.create(Self);
+        self.* = .{
+            .camera = cam,
+            .allocator = allocator,
+        };
+        return self;
+    }
+
+    pub fn frameSource(self: *Self) FrameSource {
+        return .{
+            .ptr = self,
+            .vtable = &.{
+                .getNextFrame = getNextFrameImpl,
+                .deinit = deinitImpl,
+            },
+        };
+    }
+
+    fn getNextFrameImpl(ptr: *anyopaque) camera.Image {
+        const self: *Self = @ptrCast(@alignCast(ptr));
+        // Note: In real usage this can fail, but interface doesn't support errors
+        // Caller should handle warmup/opening before using DirectCapture
+        return self.camera.captureFrame() catch unreachable;
+    }
+
+    fn deinitImpl(ptr: *anyopaque) void {
+        const self: *Self = @ptrCast(@alignCast(ptr));
+        self.allocator.destroy(self);
+    }
+};
+
+/// Double-buffered frame pipeline that captures frames in background thread
+/// while the main thread processes previously captured frames.
+const PipelinedCapture = struct {
+    camera: *camera.Camera,
+    allocator: std.mem.Allocator,
+
+    buffers: [2]OwnedImage,
+    write_idx: usize,
+
+    mutex: std.Thread.Mutex,
+    capture_thread: std.Thread,
+    should_stop: std.atomic.Value(bool),
+
+    const OwnedImage = struct {
+        data: []u8,
+        width: u32,
+        height: u32,
+        bytes_per_row: u32,
+
+        fn toImage(self: *const OwnedImage) camera.Image {
+            return .{
+                .data = self.data,
+                .width = self.width,
+                .height = self.height,
+                .bytes_per_row = self.bytes_per_row,
+            };
+        }
+    };
+
+    const Self = @This();
+
+    /// Initialize pipeline and start background capture thread
+    pub fn init(allocator: std.mem.Allocator, cam: *camera.Camera) !*Self {
+        const pipeline = try allocator.create(Self);
+        errdefer allocator.destroy(pipeline);
+
+        // Capture initial frame to determine buffer dimensions
+        const initial_frame = try cam.captureFrame();
+        const buf_size = initial_frame.bytes_per_row * initial_frame.height;
+
+        // Allocate double buffers
+        const buf0 = try allocator.alloc(u8, buf_size);
+        errdefer allocator.free(buf0);
+        const buf1 = try allocator.alloc(u8, buf_size);
+        errdefer allocator.free(buf1);
+
+        // Copy initial frame into first buffer
+        @memcpy(buf0[0..initial_frame.data.len], initial_frame.data);
+
+        pipeline.* = .{
+            .camera = cam,
+            .allocator = allocator,
+            .buffers = .{
+                .{
+                    .data = buf0,
+                    .width = initial_frame.width,
+                    .height = initial_frame.height,
+                    .bytes_per_row = initial_frame.bytes_per_row,
+                },
+                .{
+                    .data = buf1,
+                    .width = initial_frame.width,
+                    .height = initial_frame.height,
+                    .bytes_per_row = initial_frame.bytes_per_row,
+                },
+            },
+            .write_idx = 0,
+            .mutex = .{},
+            .should_stop = std.atomic.Value(bool).init(false),
+            .capture_thread = undefined,
+        };
+
+        // Start background capture thread
+        pipeline.capture_thread = try std.Thread.spawn(.{}, captureLoop, .{pipeline});
+
+        return pipeline;
+    }
+
+    /// Get FrameSource interface
+    pub fn frameSource(self: *Self) FrameSource {
+        return .{
+            .ptr = self,
+            .vtable = &.{
+                .getNextFrame = getNextFrameImpl,
+                .deinit = deinitImpl,
+            },
+        };
+    }
+
+    fn getNextFrameImpl(ptr: *anyopaque) camera.Image {
+        const self: *Self = @ptrCast(@alignCast(ptr));
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        // Read from the buffer that's NOT being written to
+        const read_idx = 1 - self.write_idx;
+        return self.buffers[read_idx].toImage();
+    }
+
+    fn deinitImpl(ptr: *anyopaque) void {
+        const self: *Self = @ptrCast(@alignCast(ptr));
+        self.should_stop.store(true, .release);
+        self.capture_thread.join();
+
+        self.allocator.free(self.buffers[0].data);
+        self.allocator.free(self.buffers[1].data);
+        self.allocator.destroy(self);
+    }
+
+    /// Background thread that continuously captures frames
+    fn captureLoop(self: *Self) void {
+        while (!self.should_stop.load(.acquire)) {
+            // Capture frame (may fail, just continue to next iteration)
+            const frame = self.camera.captureFrame() catch continue;
+
+            self.mutex.lock();
+
+            const idx = self.write_idx;
+            const buf = &self.buffers[idx];
+
+            // Copy frame data into our buffer
+            @memcpy(buf.data[0..frame.data.len], frame.data);
+            buf.width = frame.width;
+            buf.height = frame.height;
+            buf.bytes_per_row = frame.bytes_per_row;
+
+            // Swap: this buffer is now ready, start writing to the other
+            self.write_idx = 1 - self.write_idx;
+
+            self.mutex.unlock();
+        }
+    }
+};
+
+/// Frame capture strategy selection
+const CaptureStrategy = enum {
+    direct, // Simple blocking capture (no pipelining)
+    pipelined, // Double-buffered background thread
+};
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -31,6 +231,22 @@ pub fn main() !void {
         _ = try cam.captureFrame();
     }
 
+    // Select capture strategy at compile time (swap this to compare performance)
+    const strategy: CaptureStrategy = .pipelined;
+
+    // Initialize frame source based on strategy
+    const source = switch (comptime strategy) {
+        .direct => blk: {
+            var direct = try DirectCapture.init(allocator, &cam);
+            break :blk direct.frameSource();
+        },
+        .pipelined => blk: {
+            var pipeline = try PipelinedCapture.init(allocator, &cam);
+            break :blk pipeline.frameSource();
+        },
+    };
+    defer source.deinit();
+
     // Setup buffered stdout writer (reused across frames)
     var stdout_buffer: [8192]u8 = undefined;
     var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
@@ -41,9 +257,8 @@ pub fn main() !void {
         // Start timing
         const start_time = std.time.nanoTimestamp();
 
-        // Capture frame
-        const frame = try cam.captureFrame();
-        const capture_time = std.time.nanoTimestamp();
+        // Get next frame (captured in background thread)
+        const frame = source.getNextFrame();
 
         // Calculate output dimensions
         const output_cols = term_size.cols;
@@ -61,13 +276,16 @@ pub fn main() !void {
         // Print the frame
         try stdout.writeAll(braille_text);
 
+        // Capture time after rendering (before debug output)
+        const render_end = std.time.nanoTimestamp();
+
         // Print debug timing info (only in debug builds)
         if (builtin.mode == .Debug) {
-            const capture_ms = @as(f64, @floatFromInt(capture_time - start_time)) / 1_000_000.0;
             const convert_ms = @as(f64, @floatFromInt(convert_end - convert_start)) / 1_000_000.0;
-            const total_ms = @as(f64, @floatFromInt(convert_end - start_time)) / 1_000_000.0;
+            const render_ms = @as(f64, @floatFromInt(render_end - convert_end)) / 1_000_000.0;
+            const total_ms = @as(f64, @floatFromInt(render_end - start_time)) / 1_000_000.0;
             const fps = 1000.0 / total_ms;
-            try stdout.print("\nFPS: {d:.1} | Capture: {d:.1}ms | Convert: {d:.1}ms | Total: {d:.1}ms\n", .{ fps, capture_ms, convert_ms, total_ms });
+            try stdout.print("\nFPS: {d:.1} | Convert: {d:.1}ms | Render: {d:.1}ms | Total: {d:.1}ms\n", .{ fps, convert_ms, render_ms, total_ms });
         }
 
         try stdout.flush();
