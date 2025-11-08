@@ -97,10 +97,6 @@ src/
 - Uses **buffered I/O** for efficient terminal rendering
 - Unicode **Braille patterns** provide 8× better resolution than ASCII
 
-## License
-
-[Add your license here]
-
 ## Credits
 
 Created with Zig and macOS AVFoundation.
