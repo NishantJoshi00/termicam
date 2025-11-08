@@ -1,5 +1,44 @@
 const std = @import("std");
 
+/// Configure build-time options for the termicam executable
+fn configureBuildOptions(b: *std.Build) *std.Build.Step.Options {
+    const options = b.addOptions();
+
+    // Capture strategy: direct (blocking) or pipelined (double-buffered)
+    const strategy = b.option(
+        enum { direct, pipelined },
+        "strategy",
+        "Frame capture strategy: direct or pipelined (default: pipelined)",
+    ) orelse .pipelined;
+    options.addOption(@TypeOf(strategy), "capture_strategy", strategy);
+
+    // Edge detection threshold (0-255, lower = more sensitive)
+    const edge_threshold = b.option(
+        u8,
+        "edge-threshold",
+        "Edge detection sensitivity threshold 0-255 (default: 2)",
+    ) orelse 2;
+    options.addOption(u8, "edge_threshold", edge_threshold);
+
+    // Invert Braille pattern (light on dark vs dark on light)
+    const invert = b.option(
+        bool,
+        "invert",
+        "Invert Braille output (default: false)",
+    ) orelse false;
+    options.addOption(bool, "invert", invert);
+
+    // Camera warmup frames to discard for auto-exposure
+    const warmup_frames = b.option(
+        u32,
+        "warmup-frames",
+        "Number of warmup frames for camera auto-exposure (default: 3)",
+    ) orelse 3;
+    options.addOption(u32, "warmup_frames", warmup_frames);
+
+    return options;
+}
+
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
 
@@ -52,6 +91,9 @@ pub fn build(b: *std.Build) void {
         },
     });
 
+    // Configure build-time options
+    const options = configureBuildOptions(b);
+
     const exe = b.addExecutable(.{
         .name = "termicam",
         .root_module = b.createModule(.{
@@ -62,6 +104,7 @@ pub fn build(b: *std.Build) void {
 
             .imports = &.{
                 .{ .name = "termicam", .module = mod },
+                .{ .name = "build_options", .module = options.createModule() },
             },
         }),
     });

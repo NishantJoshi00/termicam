@@ -4,6 +4,7 @@ const camera = @import("termicam").camera;
 const ascii = @import("termicam").ascii;
 const term = @import("termicam").term;
 const builtin = @import("builtin");
+const build_options = @import("build_options");
 
 /// Generic frame source interface for pluggable capture strategies
 const FrameSource = struct {
@@ -221,21 +222,22 @@ pub fn main() !void {
     try cam.open();
     defer cam.close();
 
-    // Initialize Braille converter
-    var converter = try ascii.BrailleConverter.init(allocator, 1, false);
+    // Initialize Braille converter with build-time options
+    var converter = try ascii.BrailleConverter.init(
+        allocator,
+        build_options.edge_threshold,
+        build_options.invert,
+    );
     defer converter.converter().deinit();
 
-    // Warmup: Capture and discard a few frames to let camera auto-expose
+    // Warmup: Capture and discard frames to let camera auto-expose
     var i: u32 = 0;
-    while (i < 3) : (i += 1) {
+    while (i < build_options.warmup_frames) : (i += 1) {
         _ = try cam.captureFrame();
     }
 
-    // Select capture strategy at compile time (swap this to compare performance)
-    const strategy: CaptureStrategy = .pipelined;
-
-    // Initialize frame source based on strategy
-    const source = switch (comptime strategy) {
+    // Initialize frame source based on build-time strategy configuration
+    const source = switch (comptime build_options.capture_strategy) {
         .direct => blk: {
             var direct = try DirectCapture.init(allocator, &cam);
             break :blk direct.frameSource();
