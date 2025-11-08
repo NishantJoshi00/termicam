@@ -104,3 +104,41 @@ test "camera creation" {
     defer camera.deinit();
     try std.testing.expect(camera.handle != null);
 }
+
+test "camera initial state" {
+    var camera = try Camera.init();
+    defer camera.deinit();
+    try std.testing.expect(!camera.isOpen());
+}
+
+test "camera capture without open fails" {
+    var camera = try Camera.init();
+    defer camera.deinit();
+
+    const result = camera.captureFrame();
+    try std.testing.expectError(CameraError.NotOpen, result);
+}
+
+test "Image.getPixel" {
+    const test_data = [_]u8{
+        10, 20, 30, 40,
+        50, 60, 70, 80,
+        90, 100, 110, 120,
+    };
+
+    const image = Image{
+        .data = &test_data,
+        .width = 4,
+        .height = 3,
+        .bytes_per_row = 4,
+    };
+
+    // Test corner pixels
+    try std.testing.expectEqual(@as(u8, 10), image.getPixel(0, 0));
+    try std.testing.expectEqual(@as(u8, 40), image.getPixel(3, 0));
+    try std.testing.expectEqual(@as(u8, 90), image.getPixel(0, 2));
+    try std.testing.expectEqual(@as(u8, 120), image.getPixel(3, 2));
+
+    // Test middle pixel
+    try std.testing.expectEqual(@as(u8, 60), image.getPixel(1, 1));
+}

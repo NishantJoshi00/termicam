@@ -89,3 +89,92 @@ test "calculate Braille rows" {
     try std.testing.expect(rows > 0);
     try std.testing.expect(rows < 1000); // Sanity check
 }
+
+test "calculate Braille rows maintains aspect ratio" {
+    // Square image 400x400
+    const square_image = camera.Image{
+        .data = &[_]u8{0} ** 100,
+        .width = 400,
+        .height = 400,
+        .bytes_per_row = 400,
+    };
+
+    const cols: u32 = 40; // 40 cols * 2 = 80 pixels wide
+    const rows = calculateBrailleRows(square_image, cols);
+
+    // For a square image scaled to 40 cols (80 pixels wide):
+    // Scale factor = 400 / 80 = 5
+    // Height in output pixels = 400 / 5 = 80
+    // Height in Braille rows = 80 / 4 = 20
+    try std.testing.expectEqual(@as(u32, 20), rows);
+}
+
+test "calculate Braille rows wide image" {
+    // Wide image 1600x800 (2:1 aspect ratio)
+    const wide_image = camera.Image{
+        .data = &[_]u8{0} ** 100,
+        .width = 1600,
+        .height = 800,
+        .bytes_per_row = 1600,
+    };
+
+    const cols: u32 = 80; // 80 cols * 2 = 160 pixels wide
+    const rows = calculateBrailleRows(wide_image, cols);
+
+    // Scale factor = 1600 / 160 = 10
+    // Height in output pixels = 800 / 10 = 80
+    // Height in Braille rows = 80 / 4 = 20
+    try std.testing.expectEqual(@as(u32, 20), rows);
+}
+
+test "calculate Braille rows tall image" {
+    // Tall image 800x1600 (1:2 aspect ratio)
+    const tall_image = camera.Image{
+        .data = &[_]u8{0} ** 100,
+        .width = 800,
+        .height = 1600,
+        .bytes_per_row = 800,
+    };
+
+    const cols: u32 = 40; // 40 cols * 2 = 80 pixels wide
+    const rows = calculateBrailleRows(tall_image, cols);
+
+    // Scale factor = 800 / 80 = 10
+    // Height in output pixels = 1600 / 10 = 160
+    // Height in Braille rows = 160 / 4 = 40
+    try std.testing.expectEqual(@as(u32, 40), rows);
+}
+
+test "calculate Braille rows minimum output" {
+    // Very small image
+    const tiny_image = camera.Image{
+        .data = &[_]u8{0} ** 100,
+        .width = 10,
+        .height = 5,
+        .bytes_per_row = 10,
+    };
+
+    const cols: u32 = 100;
+    const rows = calculateBrailleRows(tiny_image, cols);
+
+    // Should always return at least 1 row
+    try std.testing.expect(rows >= 1);
+}
+
+test "calculate Braille rows common resolutions" {
+    // Test with 1080p (1920x1080) fitting to 160 cols
+    const hd_image = camera.Image{
+        .data = &[_]u8{0} ** 100,
+        .width = 1920,
+        .height = 1080,
+        .bytes_per_row = 1920,
+    };
+
+    const cols: u32 = 160; // 160 cols * 2 = 320 pixels wide
+    const rows = calculateBrailleRows(hd_image, cols);
+
+    // Scale factor = 1920 / 320 = 6
+    // Height in output pixels = 1080 / 6 = 180
+    // Height in Braille rows = 180 / 4 = 45
+    try std.testing.expectEqual(@as(u32, 45), rows);
+}

@@ -292,3 +292,116 @@ test "Braille converter basic" {
     try std.testing.expect(result.len == 4); // 3 bytes UTF-8 + 1 newline
     try std.testing.expectEqual(@as(u8, '\n'), result[3]);
 }
+
+test "Braille converter edge detection mode" {
+    const allocator = std.testing.allocator;
+
+    // Create image with sharp edge (black to white transition)
+    var pixels = [_]u8{
+        0,   0,   255, 255, // Row 0: left black, right white
+        0,   0,   255, 255, // Row 1: left black, right white
+        0,   0,   255, 255, // Row 2: left black, right white
+        0,   0,   255, 255, // Row 3: left black, right white
+    };
+
+    const test_image = camera.Image{
+        .data = &pixels,
+        .width = 4,
+        .height = 4,
+        .bytes_per_row = 4,
+    };
+
+    var conv = try BrailleConverter.init(allocator, .edge_detection, 50, false);
+    defer conv.converter().deinit();
+
+    const result = try conv.imageToText(test_image, 2, 1, allocator);
+    defer allocator.free(result);
+
+    // Should produce 2 Braille characters plus newline
+    try std.testing.expectEqual(@as(usize, 7), result.len); // 2 * 3 bytes + 1 newline
+    try std.testing.expectEqual(@as(u8, '\n'), result[6]);
+}
+
+test "Braille converter brightness mode" {
+    const allocator = std.testing.allocator;
+
+    // All white image
+    var white_pixels = [_]u8{255} ** 16;
+    const white_image = camera.Image{
+        .data = &white_pixels,
+        .width = 4,
+        .height = 4,
+        .bytes_per_row = 4,
+    };
+
+    var conv = try BrailleConverter.init(allocator, .brightness, 128, false);
+    defer conv.converter().deinit();
+
+    const result = try conv.imageToText(white_image, 2, 1, allocator);
+    defer allocator.free(result);
+
+    // All pixels should be bright, so we should get full Braille patterns
+    try std.testing.expectEqual(@as(usize, 7), result.len); // 2 * 3 bytes + 1 newline
+}
+
+test "Braille converter invert option" {
+    const allocator = std.testing.allocator;
+
+    var pixels = [_]u8{255} ** 8;
+    const test_image = camera.Image{
+        .data = &pixels,
+        .width = 2,
+        .height = 4,
+        .bytes_per_row = 2,
+    };
+
+    // Test with invert=false
+    var conv1 = try BrailleConverter.init(allocator, .brightness, 128, false);
+    defer conv1.converter().deinit();
+    const result1 = try conv1.imageToText(test_image, 1, 1, allocator);
+    defer allocator.free(result1);
+
+    // Test with invert=true
+    var conv2 = try BrailleConverter.init(allocator, .brightness, 128, true);
+    defer conv2.converter().deinit();
+    const result2 = try conv2.imageToText(test_image, 1, 1, allocator);
+    defer allocator.free(result2);
+
+    // Results should be different (inverted patterns)
+    try std.testing.expect(!std.mem.eql(u8, result1, result2));
+}
+
+test "Braille converter multiple rows and columns" {
+    const allocator = std.testing.allocator;
+
+    // Create 8x8 image
+    var pixels = [_]u8{128} ** 64;
+    const test_image = camera.Image{
+        .data = &pixels,
+        .width = 8,
+        .height = 8,
+        .bytes_per_row = 8,
+    };
+
+    var conv = try BrailleConverter.init(allocator, .brightness, 100, false);
+    defer conv.converter().deinit();
+
+    // Convert to 4x2 Braille grid
+    const result = try conv.imageToText(test_image, 4, 2, allocator);
+    defer allocator.free(result);
+
+    // Should produce 4 chars per row * 2 rows + 2 newlines
+    // = 4 * 3 * 2 + 2 = 26 bytes
+    try std.testing.expectEqual(@as(usize, 26), result.len);
+
+    // Verify newlines are at correct positions
+    try std.testing.expectEqual(@as(u8, '\n'), result[12]); // After first row
+    try std.testing.expectEqual(@as(u8, '\n'), result[25]); // After second row
+}
+
+test "Braille absDiff utility" {
+    try std.testing.expectEqual(@as(u32, 10), BrailleConverter.absDiff(20, 10));
+    try std.testing.expectEqual(@as(u32, 10), BrailleConverter.absDiff(10, 20));
+    try std.testing.expectEqual(@as(u32, 0), BrailleConverter.absDiff(50, 50));
+    try std.testing.expectEqual(@as(u32, 255), BrailleConverter.absDiff(255, 0));
+}
