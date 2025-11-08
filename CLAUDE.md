@@ -35,7 +35,7 @@ The project is organized as a library module (`termicam`) plus an executable:
 ### Core Components
 
 **Camera System (Native Integration)**
-- `src/camera_wrapper.h/mm`: Objective-C++ wrapper around AVFoundation (macOS camera API)
+- `deps/camera_wrapper.h/mm`: Objective-C++ wrapper around AVFoundation (macOS camera API)
 - `src/camera.zig`: Zig FFI layer that wraps the C API using `@cImport` and `@cInclude`
 - Provides blocking frame capture with grayscale image output
 - The build system links against AVFoundation, CoreMedia, CoreVideo, and Foundation frameworks
@@ -70,10 +70,20 @@ The project is organized as a library module (`termicam`) plus an executable:
 - Takes image dimensions and target column count
 - Calculates required rows to avoid stretching
 
+### Module Dependency Hierarchy
+
+The build system creates a hierarchy of modules (build.zig:8-53):
+1. **camera** (base module): No dependencies, wraps C/Objective-C++ code
+2. **ascii** and **term**: Both depend on camera module
+3. **termicam** (main library): Aggregates all submodules and re-exports them
+4. **executable**: Depends on termicam library module
+
+Each module has its own test suite that runs with `zig build test`.
+
 ## Platform-Specific Notes
 
-**macOS only**: This project relies on AVFoundation and requires macOS. The build configuration links against macOS frameworks (build.zig:99-102).
+**macOS only**: This project relies on AVFoundation and requires macOS. The build configuration links against macOS frameworks (build.zig:20-24).
 
-**Objective-C++ Requirement**: The camera wrapper uses Objective-C++ because AVFoundation is an Objective-C framework. The `.mm` extension and specific compiler flags are required.
+**Objective-C++ Requirement**: The camera wrapper uses Objective-C++ because AVFoundation is an Objective-C framework. The `.mm` extension and specific compiler flags (`-ObjC++ -fno-objc-arc`) are required.
 
 **Terminal Dependencies**: Uses Unix ioctl (TIOCGWINSZ) for terminal size detection and ANSI escape codes for rendering.
