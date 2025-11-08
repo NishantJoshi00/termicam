@@ -298,10 +298,10 @@ test "Braille converter edge detection mode" {
 
     // Create image with sharp edge (black to white transition)
     var pixels = [_]u8{
-        0,   0,   255, 255, // Row 0: left black, right white
-        0,   0,   255, 255, // Row 1: left black, right white
-        0,   0,   255, 255, // Row 2: left black, right white
-        0,   0,   255, 255, // Row 3: left black, right white
+        0, 0, 255, 255, // Row 0: left black, right white
+        0, 0, 255, 255, // Row 1: left black, right white
+        0, 0, 255, 255, // Row 2: left black, right white
+        0, 0, 255, 255, // Row 3: left black, right white
     };
 
     const test_image = camera.Image{

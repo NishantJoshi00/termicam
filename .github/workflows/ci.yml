@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    name: Build and Test
+    runs-on: macos-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Zig
+      uses: goto-bus-stop/setup-zig@v2
+      with:
+        version: 0.15.1
+
+    - name: Verify Zig installation
+      run: zig version
+
+    - name: Cache Zig dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          .zig-cache
+          ~/.cache/zig
+        key: ${{ runner.os }}-zig-${{ hashFiles('build.zig', 'build.zig.zon') }}
+        restore-keys: |
+          ${{ runner.os }}-zig-
+
+    - name: Build project
+      run: zig build
+
+    - name: Run tests
+      run: zig build test --summary all
+
+    - name: Build optimized release
+      run: zig build -Doptimize=ReleaseSafe
+
+  lint:
+    name: Code Quality
+    runs-on: macos-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Zig
+      uses: goto-bus-stop/setup-zig@v2
+      with:
+        version: 0.15.1
+
+    - name: Check formatting
+      run: zig fmt --check src/
+
+    - name: Static analysis (build check)
+      run: zig build --summary failures

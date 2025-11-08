@@ -121,8 +121,8 @@ test "camera capture without open fails" {
 
 test "Image.getPixel" {
     const test_data = [_]u8{
-        10, 20, 30, 40,
-        50, 60, 70, 80,
+        10, 20,  30,  40,
+        50, 60,  70,  80,
         90, 100, 110, 120,
     };
 
