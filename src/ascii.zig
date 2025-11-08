@@ -22,13 +22,6 @@ pub const Converter = struct {
     }
 };
 
-/// Rendering algorithm selection
-pub const RenderMode = enum {
-    edge_detection, // Gradient-based edge detection (sharp, clean features)
-    brightness, // Brightness-based with threshold (simple)
-    // brightness_dithered, // Future: brightness + dithering
-};
-
 /// Braille dot positions for 2x4 grid (compile-time constant)
 /// Maps each of 8 dots to their (x, y) position within the 2x4 Braille cell
 const BRAILLE_DOT_POSITIONS = [8][2]u32{
@@ -44,20 +37,19 @@ const BRAILLE_DOT_POSITIONS = [8][2]u32{
 
 /// Braille pattern converter (U+2800-U+28FF)
 /// Each Braille character represents a 2x4 pixel grid
+/// Uses edge detection rendering (gradient-based)
 pub const BrailleConverter = struct {
     allocator: std.mem.Allocator,
-    mode: RenderMode,
     edge_threshold: u8, // Threshold for edge detection gradient (0-255)
     invert: bool, // Invert output (light dots on dark vs dark dots on light)
 
     const Self = @This();
 
-    /// Create a new Braille converter
-    pub fn init(allocator: std.mem.Allocator, mode: RenderMode, edge_threshold: u8, invert: bool) !*Self {
+    /// Create a new Braille converter with edge detection
+    pub fn init(allocator: std.mem.Allocator, edge_threshold: u8, invert: bool) !*Self {
         const self = try allocator.create(Self);
         self.* = .{
             .allocator = allocator,
-            .mode = mode,
             .edge_threshold = edge_threshold,
             .invert = invert,
         };
@@ -167,16 +159,9 @@ pub const BrailleConverter = struct {
         return 0x2800 + @as(u21, pattern);
     }
 
-    /// Determine if a dot should be drawn based on the selected rendering mode
+    /// Determine if a dot should be drawn using edge detection
+    /// Places dots where gradients/edges are detected
     fn shouldDrawDot(self: *Self, image: camera.Image, x: u32, y: u32) bool {
-        return switch (self.mode) {
-            .edge_detection => self.shouldDrawDotEdge(image, x, y),
-            .brightness => self.shouldDrawDotBrightness(image, x, y),
-        };
-    }
-
-    /// Edge detection mode: place dot where gradients/edges are detected
-    fn shouldDrawDotEdge(self: *Self, image: camera.Image, x: u32, y: u32) bool {
         // Get center pixel
         const center = image.getPixel(x, y);
 
@@ -217,13 +202,6 @@ pub const BrailleConverter = struct {
 
         // Place dot if gradient exceeds threshold (edge detected)
         const result = avg_gradient > self.edge_threshold;
-        return if (self.invert) !result else result;
-    }
-
-    /// Brightness mode: simple threshold
-    fn shouldDrawDotBrightness(self: *Self, image: camera.Image, x: u32, y: u32) bool {
-        const brightness = image.getPixel(x, y);
-        const result = brightness > self.edge_threshold; // Reuse threshold
         return if (self.invert) !result else result;
     }
 
@@ -281,7 +259,7 @@ test "Braille converter basic" {
         .bytes_per_row = 2,
     };
 
-    var conv = try BrailleConverter.init(allocator, .brightness, 128, false);
+    var conv = try BrailleConverter.init(allocator, 128, false);
     defer conv.converter().deinit();
 
     // Convert to 1x1 Braille character
@@ -293,7 +271,7 @@ test "Braille converter basic" {
     try std.testing.expectEqual(@as(u8, '\n'), result[3]);
 }
 
-test "Braille converter edge detection mode" {
+test "Braille converter edge detection" {
     const allocator = std.testing.allocator;
 
     // Create image with sharp edge (black to white transition)
@@ -311,7 +289,7 @@ test "Braille converter edge detection mode" {
         .bytes_per_row = 4,
     };
 
-    var conv = try BrailleConverter.init(allocator, .edge_detection, 50, false);
+    var conv = try BrailleConverter.init(allocator, 50, false);
     defer conv.converter().deinit();
 
     const result = try conv.imageToText(test_image, 2, 1, allocator);
@@ -320,28 +298,6 @@ test "Braille converter edge detection mode" {
     // Should produce 2 Braille characters plus newline
     try std.testing.expectEqual(@as(usize, 7), result.len); // 2 * 3 bytes + 1 newline
     try std.testing.expectEqual(@as(u8, '\n'), result[6]);
-}
-
-test "Braille converter brightness mode" {
-    const allocator = std.testing.allocator;
-
-    // All white image
-    var white_pixels = [_]u8{255} ** 16;
-    const white_image = camera.Image{
-        .data = &white_pixels,
-        .width = 4,
-        .height = 4,
-        .bytes_per_row = 4,
-    };
-
-    var conv = try BrailleConverter.init(allocator, .brightness, 128, false);
-    defer conv.converter().deinit();
-
-    const result = try conv.imageToText(white_image, 2, 1, allocator);
-    defer allocator.free(result);
-
-    // All pixels should be bright, so we should get full Braille patterns
-    try std.testing.expectEqual(@as(usize, 7), result.len); // 2 * 3 bytes + 1 newline
 }
 
 test "Braille converter invert option" {
@@ -356,13 +312,13 @@ test "Braille converter invert option" {
     };
 
     // Test with invert=false
-    var conv1 = try BrailleConverter.init(allocator, .brightness, 128, false);
+    var conv1 = try BrailleConverter.init(allocator, 128, false);
     defer conv1.converter().deinit();
     const result1 = try conv1.imageToText(test_image, 1, 1, allocator);
     defer allocator.free(result1);
 
     // Test with invert=true
-    var conv2 = try BrailleConverter.init(allocator, .brightness, 128, true);
+    var conv2 = try BrailleConverter.init(allocator, 128, true);
     defer conv2.converter().deinit();
     const result2 = try conv2.imageToText(test_image, 1, 1, allocator);
     defer allocator.free(result2);
@@ -383,7 +339,7 @@ test "Braille converter multiple rows and columns" {
         .bytes_per_row = 8,
     };
 
-    var conv = try BrailleConverter.init(allocator, .brightness, 100, false);
+    var conv = try BrailleConverter.init(allocator, 100, false);
     defer conv.converter().deinit();
 
     // Convert to 4x2 Braille grid

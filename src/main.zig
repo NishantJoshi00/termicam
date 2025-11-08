@@ -221,8 +221,8 @@ pub fn main() !void {
     try cam.open();
     defer cam.close();
 
-    // Initialize Braille converter with edge detection
-    var converter = try ascii.BrailleConverter.init(allocator, .edge_detection, 2, false);
+    // Initialize Braille converter
+    var converter = try ascii.BrailleConverter.init(allocator, 1, false);
     defer converter.converter().deinit();
 
     // Warmup: Capture and discard a few frames to let camera auto-expose
@@ -251,6 +251,9 @@ pub fn main() !void {
     var stdout_buffer: [8192]u8 = undefined;
     var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
     const stdout = &stdout_writer.interface;
+
+    // Target 60 FPS: 1/60 second = 16.666ms = 16,666,666 nanoseconds
+    const target_frame_time_ns: i128 = 16_666_666;
 
     // Continuous frame loop
     while (true) {
@@ -289,6 +292,13 @@ pub fn main() !void {
         }
 
         try stdout.flush();
+
+        // FPS capping: sleep for remaining time to achieve 60 FPS
+        const frame_time = std.time.nanoTimestamp() - start_time;
+        if (frame_time < target_frame_time_ns) {
+            const sleep_time_ns = target_frame_time_ns - frame_time;
+            std.Thread.sleep(@intCast(sleep_time_ns));
+        }
     }
 }
 
