@@ -1,5 +1,9 @@
 # termicam
 
+<p align="center">
+  <img src="assets/logo.png" alt="termicam logo" width="200">
+</p>
+
 A real-time camera viewer for your terminal. Captures video from your macOS camera and renders it as beautiful Braille patterns with live FPS stats.
 
 ## Features
