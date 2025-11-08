@@ -265,13 +265,12 @@ pub fn main() !void {
         // Get next frame (captured in background thread)
         const frame = source.getNextFrame();
 
-        // Calculate output dimensions
-        const output_cols = term_size.cols;
-        const output_rows = term.calculateBrailleRows(frame, output_cols);
+        // Calculate output dimensions that fit within terminal bounds
+        const dims = term.calculateBrailleDimensions(frame, term_size);
 
         // Convert to Braille
         const convert_start = std.time.nanoTimestamp();
-        const braille_text = try converter.imageToText(frame, output_cols, output_rows, allocator);
+        const braille_text = try converter.imageToText(frame, dims.cols, dims.rows, allocator);
         const convert_end = std.time.nanoTimestamp();
         defer allocator.free(braille_text);
 
