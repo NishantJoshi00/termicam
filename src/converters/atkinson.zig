@@ -4,14 +4,16 @@ const common = @import("common");
 const Image = common.Image;
 const Converter = common.Converter;
 const binaryToBraille = common.binaryToBraille;
-const clampToU8 = common.clampToU8;
 
 /// Atkinson dithering converter
 /// Uses Bill Atkinson's algorithm (from original Macintosh)
 /// Diffuses only 75% of error for higher contrast results
+///
+/// Optimized: Uses 3-row rolling buffer instead of full image copy
+/// Memory: O(width) instead of O(width * height)
 pub const AtkinsonConverter = struct {
     allocator: std.mem.Allocator,
-    threshold: u8, // Threshold for binarization (typically 128)
+    threshold: i16, // Threshold for binarization (typically 128)
     invert: bool,
 
     const Self = @This();
@@ -20,7 +22,7 @@ pub const AtkinsonConverter = struct {
         const self = try allocator.create(Self);
         self.* = .{
             .allocator = allocator,
-            .threshold = threshold,
+            .threshold = @as(i16, threshold),
             .invert = invert,
         };
         return self;
@@ -54,71 +56,85 @@ pub const AtkinsonConverter = struct {
         target_rows: u32,
         allocator: std.mem.Allocator,
     ) ![]u8 {
-        // Create working buffer for dithering (need i16 for error accumulation)
         const width = image.width;
         const height = image.height;
-        const size = width * height;
-
-        var work_buffer = try allocator.alloc(i16, size);
-        defer allocator.free(work_buffer);
-
-        // Copy grayscale data to work buffer
-        for (0..size) |i| {
-            work_buffer[i] = @as(i16, image.data[i]);
-        }
 
         // Output binary buffer
-        var binary = try allocator.alloc(u8, size);
+        var binary = try allocator.alloc(u8, width * height);
         defer allocator.free(binary);
 
-        // Atkinson dithering: scan-line processing
-        // Error diffusion pattern (each neighbor gets 1/8 of error):
+        // Rolling error buffers - need 3 rows for Atkinson (current, y+1, y+2)
+        var err_row0 = try allocator.alloc(i16, width); // current row
+        defer allocator.free(err_row0);
+        var err_row1 = try allocator.alloc(i16, width); // y+1
+        defer allocator.free(err_row1);
+        var err_row2 = try allocator.alloc(i16, width); // y+2
+        defer allocator.free(err_row2);
+
+        @memset(err_row0, 0);
+        @memset(err_row1, 0);
+        @memset(err_row2, 0);
+
+        const threshold = self.threshold;
+
+        // Atkinson error diffusion pattern (each neighbor gets 1/8 of error):
         //       X   *   *
         //   *   *   *
         //       *
         // Only 6/8 = 75% of error is diffused (higher contrast)
 
         for (0..height) |y| {
+            const row_offset = y * width;
+
             for (0..width) |x| {
-                const idx = y * width + x;
-                const old_pixel = work_buffer[idx];
-                const new_pixel: i16 = if (old_pixel >= self.threshold) 255 else 0;
+                // Get pixel value + accumulated error
+                const pixel: i16 = @as(i16, image.data[row_offset + x]) + err_row0[x];
 
-                binary[idx] = @intCast(@as(u8, @intCast(@max(0, @min(255, new_pixel)))));
+                // Threshold to black or white
+                const output: u8 = if (pixel >= threshold) 255 else 0;
+                binary[row_offset + x] = output;
 
-                // Error = old - new (can be negative)
-                const err = old_pixel - new_pixel;
-                // Atkinson uses 1/8 for each of 6 neighbors
+                // Calculate quantization error (only 75% distributed)
+                const err = pixel - @as(i16, output);
+                // Atkinson: 1/8 to each of 6 neighbors = 6/8 = 75% total
                 const err_frac = @divTrunc(err, 8);
 
                 // Distribute error to 6 neighbors
-                // Right (x+1, y)
+                // Right (x+1, y): 1/8
                 if (x + 1 < width) {
-                    work_buffer[idx + 1] += err_frac;
+                    err_row0[x + 1] += err_frac;
                 }
-                // Right-right (x+2, y)
+                // Right-right (x+2, y): 1/8
                 if (x + 2 < width) {
-                    work_buffer[idx + 2] += err_frac;
+                    err_row0[x + 2] += err_frac;
                 }
-                // Next row
+
+                // Next row (y+1)
                 if (y + 1 < height) {
-                    const next_row = (y + 1) * width;
-                    // Down-left (x-1, y+1)
+                    // Down-left (x-1, y+1): 1/8
                     if (x > 0) {
-                        work_buffer[next_row + x - 1] += err_frac;
+                        err_row1[x - 1] += err_frac;
                     }
-                    // Down (x, y+1)
-                    work_buffer[next_row + x] += err_frac;
-                    // Down-right (x+1, y+1)
+                    // Down (x, y+1): 1/8
+                    err_row1[x] += err_frac;
+                    // Down-right (x+1, y+1): 1/8
                     if (x + 1 < width) {
-                        work_buffer[next_row + x + 1] += err_frac;
+                        err_row1[x + 1] += err_frac;
                     }
                 }
-                // Two rows down (x, y+2)
+
+                // Two rows down (x, y+2): 1/8
                 if (y + 2 < height) {
-                    work_buffer[(y + 2) * width + x] += err_frac;
+                    err_row2[x] += err_frac;
                 }
             }
+
+            // Rotate buffers: row0 <- row1 <- row2 <- cleared
+            const tmp = err_row0;
+            err_row0 = err_row1;
+            err_row1 = err_row2;
+            err_row2 = tmp;
+            @memset(err_row2, 0);
         }
 
         return binaryToBraille(binary, width, height, target_cols, target_rows, self.invert, allocator);

@@ -34,6 +34,10 @@ pub const Mode = union(enum) {
         threshold: u8 = 128,
         invert: bool = false,
     },
+    blue_noise: struct {
+        threshold: u8 = 128,
+        invert: bool = false,
+    },
 };
 
 // =============================================================================
@@ -305,10 +309,14 @@ pub fn printHelp() void {
         \\      +threshold=<N>     Binarization threshold 0-255 (default: 128)
         \\      +invert            Invert output
         \\
+        \\    blue_noise         Blue noise dithering (organic, pattern-free)
+        \\      +threshold=<N>     Threshold adjustment 0-255 (default: 128)
+        \\      +invert            Invert output
+        \\
         \\EXAMPLES:
         \\    dith +source=cam +mode=edge
-        \\    dith +source=cam +mode=atkinson +threshold=100
-        \\    dith +source=file +mode=floyd_steinberg +path=photo.png +invert
+        \\    dith +source=cam +mode=blue_noise
+        \\    dith +source=file +mode=atkinson +path=photo.png +invert
         \\
     ;
     var buffer: [4096]u8 = undefined;
@@ -422,6 +430,19 @@ test "parse floyd_steinberg mode" {
         .floyd_steinberg => |fs| {
             try std.testing.expectEqual(@as(u8, 128), fs.threshold); // default
             try std.testing.expectEqual(true, fs.invert);
+        },
+        else => unreachable,
+    }
+}
+
+test "parse blue_noise mode" {
+    var iter = SliceIter{ .slice = &.{ "dith", "+source=cam", "+mode=blue_noise", "+threshold=64" } };
+    const args = try parseFromIter(&iter);
+    try std.testing.expect(args != null);
+    switch (args.?.mode) {
+        .blue_noise => |bn| {
+            try std.testing.expectEqual(@as(u8, 64), bn.threshold);
+            try std.testing.expectEqual(false, bn.invert);
         },
         else => unreachable,
     }

@@ -4,6 +4,7 @@
 //! - EdgeConverter: Gradient-based edge detection
 //! - AtkinsonConverter: Atkinson dithering (75% error diffusion, high contrast)
 //! - FloydSteinbergConverter: Floyd-Steinberg dithering (100% error diffusion, smooth)
+//! - BlueNoiseConverter: Blue noise threshold dithering (organic, pattern-free)
 
 // Re-export the common interface
 pub const Converter = @import("converters/common").Converter;
@@ -13,6 +14,7 @@ pub const Image = @import("converters/common").Image;
 pub const EdgeConverter = @import("converters/edge").EdgeConverter;
 pub const AtkinsonConverter = @import("converters/atkinson").AtkinsonConverter;
 pub const FloydSteinbergConverter = @import("converters/floyd_steinberg").FloydSteinbergConverter;
+pub const BlueNoiseConverter = @import("converters/blue_noise").BlueNoiseConverter;
 
 // Re-export utilities that might be useful externally
 pub const common = @import("converters/common");
@@ -24,4 +26,5 @@ test {
     _ = @import("converters/edge");
     _ = @import("converters/atkinson");
     _ = @import("converters/floyd_steinberg");
+    _ = @import("converters/blue_noise");
 }

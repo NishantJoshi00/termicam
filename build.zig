@@ -66,6 +66,14 @@ pub fn build(b: *std.Build) void {
         },
     });
 
+    const blue_noise_mod = b.addModule("converters/blue_noise", .{
+        .root_source_file = b.path("src/converters/blue_noise.zig"),
+        .target = target,
+        .imports = &.{
+            .{ .name = "common", .module = common_mod },
+        },
+    });
+
     // Converter module (aggregates all converter submodules)
     const converter_mod = b.addModule("converter", .{
         .root_source_file = b.path("src/converter.zig"),
@@ -75,6 +83,7 @@ pub fn build(b: *std.Build) void {
             .{ .name = "converters/edge", .module = edge_mod },
             .{ .name = "converters/atkinson", .module = atkinson_mod },
             .{ .name = "converters/floyd_steinberg", .module = floyd_steinberg_mod },
+            .{ .name = "converters/blue_noise", .module = blue_noise_mod },
         },
     });
 

@@ -8,9 +8,12 @@ const binaryToBraille = common.binaryToBraille;
 /// Floyd-Steinberg dithering converter
 /// Classic error diffusion algorithm with full error distribution
 /// Produces smooth gradients with natural-looking noise
+///
+/// Optimized: Uses 2-row rolling buffer instead of full image copy
+/// Memory: O(width) instead of O(width * height)
 pub const FloydSteinbergConverter = struct {
     allocator: std.mem.Allocator,
-    threshold: u8, // Threshold for binarization (typically 128)
+    threshold: i16, // Threshold for binarization (typically 128)
     invert: bool,
 
     const Self = @This();
@@ -19,7 +22,7 @@ pub const FloydSteinbergConverter = struct {
         const self = try allocator.create(Self);
         self.* = .{
             .allocator = allocator,
-            .threshold = threshold,
+            .threshold = @as(i16, threshold),
             .invert = invert,
         };
         return self;
@@ -55,60 +58,74 @@ pub const FloydSteinbergConverter = struct {
     ) ![]u8 {
         const width = image.width;
         const height = image.height;
-        const size = width * height;
-
-        // Work buffer with i16 for error accumulation
-        var work_buffer = try allocator.alloc(i16, size);
-        defer allocator.free(work_buffer);
-
-        // Copy grayscale data
-        for (0..size) |i| {
-            work_buffer[i] = @as(i16, image.data[i]);
-        }
 
         // Output binary buffer
-        var binary = try allocator.alloc(u8, size);
+        var binary = try allocator.alloc(u8, width * height);
         defer allocator.free(binary);
 
-        // Floyd-Steinberg dithering
-        // Error diffusion pattern:
+        // Rolling error buffers - only need current row and next row
+        // Using i16 for error accumulation to handle overflow
+        var err_curr = try allocator.alloc(i16, width);
+        defer allocator.free(err_curr);
+        var err_next = try allocator.alloc(i16, width);
+        defer allocator.free(err_next);
+
+        // Initialize first row errors to zero
+        @memset(err_curr, 0);
+        @memset(err_next, 0);
+
+        const threshold = self.threshold;
+
+        // Floyd-Steinberg error diffusion pattern:
         //       X   7/16
         // 3/16 5/16 1/16
-        // 100% of error is diffused
 
         for (0..height) |y| {
+            const row_offset = y * width;
+
             for (0..width) |x| {
-                const idx = y * width + x;
-                const old_pixel = work_buffer[idx];
-                const new_pixel: i16 = if (old_pixel >= self.threshold) 255 else 0;
+                // Get pixel value + accumulated error
+                const pixel: i16 = @as(i16, image.data[row_offset + x]) + err_curr[x];
 
-                binary[idx] = @intCast(@as(u8, @intCast(@max(0, @min(255, new_pixel)))));
+                // Threshold to black or white
+                const output: u8 = if (pixel >= threshold) 255 else 0;
+                binary[row_offset + x] = output;
 
-                const err = old_pixel - new_pixel;
+                // Calculate quantization error
+                const err = pixel - @as(i16, output);
+
+                // Distribute error using bit shifts for speed (approximates /16)
+                // 7/16 ≈ 7>>4, 5/16 ≈ 5>>4, 3/16 ≈ 3>>4, 1/16 ≈ 1>>4
+                const err7 = @divTrunc(err * 7, 16);
+                const err5 = @divTrunc(err * 5, 16);
+                const err3 = @divTrunc(err * 3, 16);
+                const err1 = @divTrunc(err, 16);
 
                 // Right (x+1, y): 7/16
                 if (x + 1 < width) {
-                    work_buffer[idx + 1] += @divTrunc(err * 7, 16);
+                    err_curr[x + 1] += err7;
                 }
 
-                // Next row
+                // Next row errors (will be used when we advance)
                 if (y + 1 < height) {
-                    const next_row = (y + 1) * width;
-
                     // Down-left (x-1, y+1): 3/16
                     if (x > 0) {
-                        work_buffer[next_row + x - 1] += @divTrunc(err * 3, 16);
+                        err_next[x - 1] += err3;
                     }
-
                     // Down (x, y+1): 5/16
-                    work_buffer[next_row + x] += @divTrunc(err * 5, 16);
-
+                    err_next[x] += err5;
                     // Down-right (x+1, y+1): 1/16
                     if (x + 1 < width) {
-                        work_buffer[next_row + x + 1] += @divTrunc(err, 16);
+                        err_next[x + 1] += err1;
                     }
                 }
             }
+
+            // Swap buffers: next becomes current, clear next
+            const tmp = err_curr;
+            err_curr = err_next;
+            err_next = tmp;
+            @memset(err_next, 0);
         }
 
         return binaryToBraille(binary, width, height, target_cols, target_rows, self.invert, allocator);

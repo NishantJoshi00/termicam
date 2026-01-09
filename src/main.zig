@@ -221,6 +221,10 @@ fn initConverter(mode: cli.Mode, allocator: std.mem.Allocator) !converter.Conver
             const conv = try converter.FloydSteinbergConverter.init(allocator, cfg.threshold, cfg.invert);
             break :blk conv.converter();
         },
+        .blue_noise => |cfg| blk: {
+            const conv = try converter.BlueNoiseConverter.init(allocator, cfg.threshold, cfg.invert);
+            break :blk conv.converter();
+        },
     };
 }
 
