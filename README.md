@@ -1,88 +1,115 @@
-# termicam
+# dith
 
 <p align="center">
-  <img src="assets/logo.png" alt="termicam logo" width="200">
+  <img src="assets/logo.png" alt="dith logo" width="200">
 </p>
 
-A real-time camera viewer for your terminal. Watch yourself rendered as beautiful Braille patterns, right where you code.
+A universal dithering tool for the terminal. Plug in any source, pick a mode, get beautiful Braille output.
 
-## What It Does
+## What You Can Do
 
-termicam captures video from your macOS camera and transforms it into live terminal graphics using Unicode Braille characters. Each character encodes a 2×4 pixel grid, giving you 8× the resolution of traditional ASCII art. The result is a surprisingly detailed sketch-like representation that updates in real-time.
-
-The edge detection algorithm emphasizes gradients and boundaries, producing clean, high-contrast output that looks great even on small terminal windows.
-
-## Requirements
-
-- macOS (uses AVFoundation framework)
-- Zig 0.15.1 or later
-- Camera permissions for your terminal application
-
-**Recommended:** [Ghostty terminal](https://ghostty.org) for the best rendering quality and performance.
-
-## Quick Start
+**Dither anything to Braille art:**
 
 ```bash
-git clone <repository-url>
-cd termicam
-zig build run
+# Live camera feed
+dith +source=cam +mode=atkinson
+
+# Any image file
+dith +source=file +mode=blue_noise +path=photo.png
 ```
 
-On first run, macOS will prompt you to grant camera permissions. Press `Ctrl+C` to exit.
+**5 rendering modes, each with its own character:**
 
-## Build Options
+| Mode | Best For |
+|------|----------|
+| `edge` | Line art, sketches, outlines |
+| `atkinson` | High contrast, classic Mac aesthetic |
+| `floyd_steinberg` | Photos, smooth gradients |
+| `blue_noise` | Organic, film-grain look |
+| `bayer` | Retro 8-bit, crosshatch pattern |
 
-termicam supports several compile-time configuration options:
+**Fine-tune the output:**
 
 ```bash
-# Capture strategy (default: pipelined)
-zig build run -Dstrategy=direct      # Simple blocking capture
-zig build run -Dstrategy=pipelined   # Double-buffered background thread
+# Adjust sensitivity
+dith +source=cam +mode=edge +threshold=50
 
-# Edge detection sensitivity 0-255 (default: 2, lower = more sensitive)
-zig build run -Dedge-threshold=50
-
-# Invert output (light dots on dark vs dark dots on light)
-zig build run -Dinvert=true
-
-# Camera warmup frames for auto-exposure (default: 3)
-zig build run -Dwarmup-frames=5
+# Invert colors
+dith +source=file +mode=bayer +path=image.jpg +invert
 ```
 
-Build for release with full optimizations:
+## Install
 
 ```bash
+git clone https://github.com/user/dith
+cd dith
 zig build -Doptimize=ReleaseFast
-./zig-out/bin/termicam
 ```
 
-## How It Works
+Binary is at `./zig-out/bin/dith`
 
-termicam operates through a three-stage pipeline:
+**Requirements:** Zig 0.15.1+, macOS (for camera)
 
-1. **Capture**: An Objective-C++ wrapper around AVFoundation pulls frames from your camera as grayscale images
-2. **Convert**: Each 2×4 pixel block is analyzed for edge gradients and mapped to a Unicode Braille character (U+2800-U+28FF)
-3. **Render**: ANSI escape codes position the cursor and draw the frame, with optional FPS statistics in debug builds
+## Usage
 
-The pipelined capture strategy runs frame acquisition in a background thread with double buffering, allowing the main thread to process and render the previous frame while the next one is being captured. This architectural choice eliminates capture latency from the critical path.
+```
+dith +source=<SOURCE> +mode=<MODE> [options...]
+```
 
-## Development
+### Sources
+
+**Camera** - live feed from your webcam
+```bash
+dith +source=cam +mode=edge
+dith +source=cam +mode=atkinson +warmup=5      # more warmup frames
+dith +source=cam +mode=blue_noise +strategy=direct   # no background capture
+```
+
+**File** - PNG, JPEG, or BMP
+```bash
+dith +source=file +mode=floyd_steinberg +path=photo.png
+dith +source=file +mode=bayer +path=~/Downloads/image.jpg +invert
+```
+
+### Options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `+threshold=N` | Sensitivity 0-255 | varies by mode |
+| `+invert` | Flip black/white | off |
+| `+warmup=N` | Camera warmup frames | 3 |
+| `+strategy=` | `pipelined` or `direct` | pipelined |
+
+## Examples
 
 ```bash
-# Run the test suite
+# Sketch-like edge detection
+dith +source=file +mode=edge +path=drawing.png +threshold=5
+
+# Classic Macintosh dithering
+dith +source=file +mode=atkinson +path=photo.jpg
+
+# Smooth photo dithering
+dith +source=cam +mode=floyd_steinberg +threshold=140
+
+# Cinematic grain
+dith +source=file +mode=blue_noise +path=portrait.png
+
+# Retro game aesthetic
+dith +source=cam +mode=bayer +invert
+```
+
+## Contributing
+
+```bash
+# Run tests
 zig build test
 
-# Clean build artifacts
-rm -rf zig-out .zig-cache
+# Build debug
+zig build
+
+# Build and run
+zig build run -- +source=cam +mode=edge
 ```
 
-## Technical Notes
-
-termicam demonstrates several systems programming patterns in Zig:
-
-- **FFI layering**: C API boundary between Objective-C++ (AVFoundation) and Zig
-- **Vtable interfaces**: Generic `Converter` and `FrameSource` abstractions enable pluggable backends
-- **Zero-copy rendering**: Buffered stdout with pre-allocated buffers minimizes allocations
-- **Aspect ratio preservation**: Automatic calculation maintains 1:1 pixel scaling regardless of terminal dimensions
-
-The modular architecture separates camera capture, rendering logic, and terminal utilities into independent modules with clear dependency boundaries. Each module includes comprehensive tests.
+PRs welcome. The converter system is modular - adding a new dithering algorithm is straightforward.
