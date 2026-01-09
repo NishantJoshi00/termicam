@@ -182,6 +182,7 @@ const PipelinedCapture = struct {
             const frame = self.camera.captureFrame() catch continue;
 
             self.mutex.lock();
+            defer self.mutex.unlock();
 
             const idx = self.write_idx;
             const buf = &self.buffers[idx];
@@ -194,8 +195,6 @@ const PipelinedCapture = struct {
 
             // Swap: this buffer is now ready, start writing to the other
             self.write_idx = 1 - self.write_idx;
-
-            self.mutex.unlock();
         }
     }
 };
@@ -250,7 +249,8 @@ pub fn main() !void {
     defer source.deinit();
 
     // Setup buffered stdout writer (reused across frames)
-    var stdout_buffer: [8192]u8 = undefined;
+    // Use larger buffer to accommodate full-screen Braille output (160x45 = ~22KB)
+    var stdout_buffer: [32768]u8 = undefined;
     var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
     const stdout = &stdout_writer.interface;
 
@@ -268,10 +268,10 @@ pub fn main() !void {
         // Calculate output dimensions that fit within terminal bounds
         const dims = term.calculateBrailleDimensions(frame, term_size);
 
-        // Convert to Braille
-        const convert_start = std.time.nanoTimestamp();
+        // Convert to Braille (with optional timing for debug builds)
+        const convert_start = if (builtin.mode == .Debug) std.time.nanoTimestamp() else 0;
         const braille_text = try converter.imageToText(frame, dims.cols, dims.rows, allocator);
-        const convert_end = std.time.nanoTimestamp();
+        const convert_end = if (builtin.mode == .Debug) std.time.nanoTimestamp() else 0;
         defer allocator.free(braille_text);
 
         // Clear screen right before rendering
@@ -281,7 +281,7 @@ pub fn main() !void {
         try stdout.writeAll(braille_text);
 
         // Capture time after rendering (before debug output)
-        const render_end = std.time.nanoTimestamp();
+        const render_end = if (builtin.mode == .Debug) std.time.nanoTimestamp() else 0;
 
         // Print debug timing info (only in debug builds)
         if (builtin.mode == .Debug) {

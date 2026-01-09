@@ -137,19 +137,21 @@ pub const BrailleConverter = struct {
 
         var pattern: u8 = 0;
 
+        // Pre-calculate base output coordinates to reduce arithmetic in loop
+        const base_out_x = col * 2;
+        const base_out_y = row * 4;
+
         for (BRAILLE_DOT_POSITIONS, 0..) |pos, i| {
             // Calculate position in output pixel space (each Braille char = 2x4 pixels)
-            const out_x = col * 2 + pos[0];
-            const out_y = row * 4 + pos[1];
+            const out_x = base_out_x + pos[0];
+            const out_y = base_out_y + pos[1];
 
             // Map to source image coordinates
             const src_x = @as(u32, @intFromFloat(@as(f32, @floatFromInt(out_x)) * scale_x));
             const src_y = @as(u32, @intFromFloat(@as(f32, @floatFromInt(out_y)) * scale_y));
 
             if (src_x < image.width and src_y < image.height) {
-                const should_draw = self.shouldDrawDot(image, src_x, src_y);
-
-                if (should_draw) {
+                if (self.shouldDrawDot(image, src_x, src_y)) {
                     pattern |= @as(u8, 1) << @intCast(i);
                 }
             }
@@ -161,44 +163,45 @@ pub const BrailleConverter = struct {
 
     /// Determine if a dot should be drawn using edge detection
     /// Places dots where gradients/edges are detected
+    /// Optimized for hot path with minimal branches and efficient memory access
     fn shouldDrawDot(self: *Self, image: camera.Image, x: u32, y: u32) bool {
         // Get center pixel
         const center = image.getPixel(x, y);
 
         // Compute simple gradient by comparing to neighbors (4-connected)
+        // Cache image dimensions to avoid repeated struct access
+        const width = image.width;
+        const height = image.height;
+
         var gradient: u32 = 0;
         var count: u32 = 0;
 
         // Check left neighbor
         if (x > 0) {
-            const left = image.getPixel(x - 1, y);
-            gradient += absDiff(center, left);
+            gradient += absDiff(center, image.getPixel(x - 1, y));
             count += 1;
         }
 
         // Check right neighbor
-        if (x + 1 < image.width) {
-            const right = image.getPixel(x + 1, y);
-            gradient += absDiff(center, right);
+        if (x + 1 < width) {
+            gradient += absDiff(center, image.getPixel(x + 1, y));
             count += 1;
         }
 
         // Check top neighbor
         if (y > 0) {
-            const top = image.getPixel(x, y - 1);
-            gradient += absDiff(center, top);
+            gradient += absDiff(center, image.getPixel(x, y - 1));
             count += 1;
         }
 
         // Check bottom neighbor
-        if (y + 1 < image.height) {
-            const bottom = image.getPixel(x, y + 1);
-            gradient += absDiff(center, bottom);
+        if (y + 1 < height) {
+            gradient += absDiff(center, image.getPixel(x, y + 1));
             count += 1;
         }
 
-        // Average gradient magnitude
-        const avg_gradient = if (count > 0) gradient / count else 0;
+        // Average gradient magnitude (count is always > 0 for interior pixels)
+        const avg_gradient = gradient / count;
 
         // Place dot if gradient exceeds threshold (edge detected)
         const result = avg_gradient > self.edge_threshold;
@@ -206,14 +209,17 @@ pub const BrailleConverter = struct {
     }
 
     /// Absolute difference between two u8 values
+    /// Uses branchless implementation for better performance in hot loops
     fn absDiff(a: u8, b: u8) u32 {
-        return if (a > b) a - b else b - a;
+        const diff: i32 = @as(i32, a) - @as(i32, b);
+        return @abs(diff);
     }
 };
 
 /// Encode a Braille Unicode codepoint to UTF-8
 /// Braille patterns (U+2800-U+28FF) always encode to 3 bytes
-fn encodeUtf8Braille(codepoint: u21, buffer: []u8) usize {
+/// Inline for performance as this is called for every character
+inline fn encodeUtf8Braille(codepoint: u21, buffer: []u8) usize {
     std.debug.assert(codepoint >= 0x2800 and codepoint <= 0x28FF);
     std.debug.assert(buffer.len >= 3);
 

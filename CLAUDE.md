@@ -60,14 +60,14 @@ The project is organized as a library module (`termicam`) plus an executable:
 - `src/ascii.zig`: Pluggable converter interface for ASCII/Braille rendering
   - `Converter`: Generic interface with vtable pattern for multiple rendering backends
   - `BrailleConverter`: Main implementation that converts images to Braille patterns
-  - `RenderMode`: Supports edge detection (gradient-based) and brightness-based rendering
-  - Each Braille character represents a 2×4 pixel grid (Unicode U+2800-U+28FF)
+  - Uses edge detection (gradient-based) rendering
+  - Each Braille character represents a 2x4 pixel grid (Unicode U+2800-U+28FF)
 - `src/term.zig`: Terminal utilities (size detection via ioctl, ANSI escape codes, aspect ratio calculation)
 
 **Main Loop** (`src/main.zig`)
 - Gets terminal dimensions
 - Initializes camera with warmup frames for auto-exposure
-- Continuous loop: capture frame → convert to Braille → render with FPS stats
+- Continuous loop: capture frame -> convert to Braille -> render with FPS stats
 - Uses buffered stdout for performance
 - Supports two capture strategies:
   - **DirectCapture**: Simple blocking capture (original implementation)
@@ -75,7 +75,7 @@ The project is organized as a library module (`termicam`) plus an executable:
 
 ### Key Design Patterns
 
-**FFI Bridge**: C wrapper (Objective-C++) → Zig bindings → Zig application
+**FFI Bridge**: C wrapper (Objective-C++) -> Zig bindings -> Zig application
 - Camera implementation is in Objective-C++ due to AVFoundation requirements
 - C API provides clean boundary between Objective-C++ and Zig
 - Compiled with `-ObjC++ -fno-objc-arc` flags
@@ -90,13 +90,13 @@ The project is organized as a library module (`termicam`) plus an executable:
 - DirectCapture: Simple blocking calls
 - PipelinedCapture: Background thread with double buffering for improved performance
 
-**Aspect Ratio Preservation**: `term.calculateBrailleRows()` maintains 1:1 pixel aspect ratio
-- Takes image dimensions and target column count
-- Calculates required rows to avoid stretching
+**Aspect Ratio Preservation**: `term.calculateBrailleDimensions()` maintains 1:1 pixel aspect ratio
+- Takes image dimensions and terminal size
+- Calculates optimal output that fits within terminal bounds
 
 ### Module Dependency Hierarchy
 
-The build system creates a hierarchy of modules (build.zig:8-53):
+The build system creates a hierarchy of modules (build.zig:47-92):
 1. **camera** (base module): No dependencies, wraps C/Objective-C++ code
 2. **ascii** and **term**: Both depend on camera module
 3. **termicam** (main library): Aggregates all submodules and re-exports them
@@ -106,7 +106,7 @@ Each module has its own test suite that runs with `zig build test`.
 
 ## Platform-Specific Notes
 
-**macOS only**: This project relies on AVFoundation and requires macOS. The build configuration links against macOS frameworks (build.zig:20-24).
+**macOS only**: This project relies on AVFoundation and requires macOS. The build configuration links against macOS frameworks (build.zig:60-63).
 
 **Objective-C++ Requirement**: The camera wrapper uses Objective-C++ because AVFoundation is an Objective-C framework. The `.mm` extension and specific compiler flags (`-ObjC++ -fno-objc-arc`) are required.
 
