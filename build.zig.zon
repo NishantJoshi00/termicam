@@ -1,9 +1,9 @@
 .{
-    .name = .termicam,
+    .name = .dith,
 
-    .version = "0.0.0",
+    .version = "0.1.0",
 
-    .fingerprint = 0xf0a4b6841d42b672,
+    .fingerprint = 0xda3c1a7f4767502a,
 
     .minimum_zig_version = "0.15.2",
 
