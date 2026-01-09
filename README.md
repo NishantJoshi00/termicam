@@ -1,7 +1,7 @@
 # dith
 
 <p align="center">
-  <img src="assets/logo.png" alt="dith logo" width="200">
+  <img src="assets/pikachu.png" alt="dith demo" width="600">
 </p>
 
 A universal dithering tool for the terminal. Plug in any source, pick an algorithm, see the output rendered in real-time.
