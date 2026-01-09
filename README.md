@@ -4,7 +4,11 @@
   <img src="assets/pikachu.png" alt="dith demo" width="600">
 </p>
 
-A universal dithering tool for the terminal. Plug in any source, pick an algorithm, see the output rendered in real-time.
+Ever wanted to look at yourself... in Braille?
+
+Plug in your webcam or throw any image at it: PNG, JPEG, BMP, whatever. 5 classic dithering algorithms render it live in your terminal.
+
+Built in Zig with native macOS camera integration. No dependencies, just vibes.
 
 ## What You Can Do
 
