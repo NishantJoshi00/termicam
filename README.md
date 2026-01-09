@@ -4,11 +4,11 @@
   <img src="assets/logo.png" alt="dith logo" width="200">
 </p>
 
-A universal dithering tool for the terminal. Plug in any source, pick a mode, get beautiful Braille output.
+A universal dithering tool for the terminal. Plug in any source, pick an algorithm, see the output rendered in real-time.
 
 ## What You Can Do
 
-**Dither anything to Braille art:**
+**Dither anything:**
 
 ```bash
 # Live camera feed
@@ -18,7 +18,7 @@ dith +source=cam +mode=atkinson
 dith +source=file +mode=blue_noise +path=photo.png
 ```
 
-**5 rendering modes, each with its own character:**
+**5 classic dithering algorithms:**
 
 | Mode | Best For |
 |------|----------|
@@ -40,15 +40,15 @@ dith +source=file +mode=bayer +path=image.jpg +invert
 
 ## Install
 
+**Requirements:** Zig 0.15.1+, macOS (for camera source)
+
 ```bash
 git clone https://github.com/user/dith
 cd dith
 zig build -Doptimize=ReleaseFast
 ```
 
-Binary is at `./zig-out/bin/dith`
-
-**Requirements:** Zig 0.15.1+, macOS (for camera)
+Binary is at `./zig-out/bin/dith`. Add it to your PATH or copy it somewhere convenient.
 
 ## Usage
 
@@ -105,11 +105,14 @@ dith +source=cam +mode=bayer +invert
 # Run tests
 zig build test
 
-# Build debug
+# Debug build
 zig build
+
+# Release build
+zig build -Doptimize=ReleaseFast
 
 # Build and run
 zig build run -- +source=cam +mode=edge
 ```
 
-PRs welcome. The converter system is modular - adding a new dithering algorithm is straightforward.
+PRs welcome.
