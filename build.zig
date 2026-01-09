@@ -1,53 +1,23 @@
 const std = @import("std");
 
-/// Configure build-time options for the termicam executable
-fn configureBuildOptions(b: *std.Build) *std.Build.Step.Options {
-    const options = b.addOptions();
-
-    // Capture strategy: direct (blocking) or pipelined (double-buffered)
-    const strategy = b.option(
-        enum { direct, pipelined },
-        "strategy",
-        "Frame capture strategy: direct or pipelined (default: pipelined)",
-    ) orelse .pipelined;
-    options.addOption(@TypeOf(strategy), "capture_strategy", strategy);
-
-    // Edge detection threshold (0-255, lower = more sensitive)
-    const edge_threshold = b.option(
-        u8,
-        "edge-threshold",
-        "Edge detection sensitivity threshold 0-255 (default: 2)",
-    ) orelse 2;
-    options.addOption(u8, "edge_threshold", edge_threshold);
-
-    // Invert Braille pattern (light on dark vs dark on light)
-    const invert = b.option(
-        bool,
-        "invert",
-        "Invert Braille output (default: false)",
-    ) orelse false;
-    options.addOption(bool, "invert", invert);
-
-    // Camera warmup frames to discard for auto-exposure
-    const warmup_frames = b.option(
-        u32,
-        "warmup-frames",
-        "Number of warmup frames for camera auto-exposure (default: 3)",
-    ) orelse 3;
-    options.addOption(u32, "warmup_frames", warmup_frames);
-
-    return options;
-}
-
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
 
     const optimize = b.standardOptimizeOption(.{});
 
-    // Base module: camera (no dependencies)
+    // Base module: types (shared by all)
+    const types_mod = b.addModule("types", .{
+        .root_source_file = b.path("src/types.zig"),
+        .target = target,
+    });
+
+    // Camera module (depends on types)
     const camera_mod = b.addModule("camera", .{
         .root_source_file = b.path("src/camera.zig"),
         .target = target,
+        .imports = &.{
+            .{ .name = "types", .module = types_mod },
+        },
     });
     camera_mod.addIncludePath(b.path("deps"));
     camera_mod.addCSourceFile(.{
@@ -62,40 +32,100 @@ pub fn build(b: *std.Build) void {
     camera_mod.linkFramework("CoreVideo", .{});
     camera_mod.linkFramework("Foundation", .{});
 
-    // ASCII module (depends on camera)
-    const ascii_mod = b.addModule("ascii", .{
-        .root_source_file = b.path("src/ascii.zig"),
+    // Converter submodules
+    const common_mod = b.addModule("converters/common", .{
+        .root_source_file = b.path("src/converters/common.zig"),
         .target = target,
         .imports = &.{
-            .{ .name = "camera", .module = camera_mod },
+            .{ .name = "types", .module = types_mod },
         },
     });
 
-    // Terminal module (depends on camera)
+    const edge_mod = b.addModule("converters/edge", .{
+        .root_source_file = b.path("src/converters/edge.zig"),
+        .target = target,
+        .imports = &.{
+            .{ .name = "common", .module = common_mod },
+        },
+    });
+
+    const atkinson_mod = b.addModule("converters/atkinson", .{
+        .root_source_file = b.path("src/converters/atkinson.zig"),
+        .target = target,
+        .imports = &.{
+            .{ .name = "common", .module = common_mod },
+        },
+    });
+
+    const floyd_steinberg_mod = b.addModule("converters/floyd_steinberg", .{
+        .root_source_file = b.path("src/converters/floyd_steinberg.zig"),
+        .target = target,
+        .imports = &.{
+            .{ .name = "common", .module = common_mod },
+            .{ .name = "atkinson", .module = atkinson_mod },
+        },
+    });
+
+    // Converter module (aggregates all converter submodules)
+    const converter_mod = b.addModule("converter", .{
+        .root_source_file = b.path("src/converter.zig"),
+        .target = target,
+        .imports = &.{
+            .{ .name = "converters/common", .module = common_mod },
+            .{ .name = "converters/edge", .module = edge_mod },
+            .{ .name = "converters/atkinson", .module = atkinson_mod },
+            .{ .name = "converters/floyd_steinberg", .module = floyd_steinberg_mod },
+        },
+    });
+
+    // Terminal module (depends on types)
     const term_mod = b.addModule("term", .{
         .root_source_file = b.path("src/term.zig"),
         .target = target,
         .imports = &.{
-            .{ .name = "camera", .module = camera_mod },
+            .{ .name = "types", .module = types_mod },
         },
     });
 
-    // Main library module: termicam (aggregates all submodules)
-    const mod = b.addModule("termicam", .{
+    // CLI module (depends on types)
+    const cli_mod = b.addModule("cli", .{
+        .root_source_file = b.path("src/cli.zig"),
+        .target = target,
+        .imports = &.{
+            .{ .name = "types", .module = types_mod },
+        },
+    });
+
+    // Image module (depends on types, uses stb_image)
+    const image_mod = b.addModule("image", .{
+        .root_source_file = b.path("src/image.zig"),
+        .target = target,
+        .imports = &.{
+            .{ .name = "types", .module = types_mod },
+        },
+    });
+    image_mod.addIncludePath(b.path("deps"));
+    image_mod.addCSourceFile(.{
+        .file = b.path("deps/stb_image_impl.c"),
+    });
+    image_mod.link_libc = true;
+
+    // Main library module: dith (aggregates all submodules)
+    const mod = b.addModule("dith", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
         .imports = &.{
+            .{ .name = "types", .module = types_mod },
             .{ .name = "camera", .module = camera_mod },
-            .{ .name = "ascii", .module = ascii_mod },
+            .{ .name = "converter", .module = converter_mod },
             .{ .name = "term", .module = term_mod },
+            .{ .name = "cli", .module = cli_mod },
+            .{ .name = "image", .module = image_mod },
         },
     });
 
-    // Configure build-time options
-    const options = configureBuildOptions(b);
-
     const exe = b.addExecutable(.{
-        .name = "termicam",
+        .name = "dith",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/main.zig"),
 
@@ -103,8 +133,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
 
             .imports = &.{
-                .{ .name = "termicam", .module = mod },
-                .{ .name = "build_options", .module = options.createModule() },
+                .{ .name = "dith", .module = mod },
             },
         }),
     });
@@ -128,11 +157,11 @@ pub fn build(b: *std.Build) void {
     });
     const run_camera_tests = b.addRunArtifact(camera_tests);
 
-    // ASCII module tests
-    const ascii_tests = b.addTest(.{
-        .root_module = ascii_mod,
+    // Converter module tests
+    const converter_tests = b.addTest(.{
+        .root_module = converter_mod,
     });
-    const run_ascii_tests = b.addRunArtifact(ascii_tests);
+    const run_converter_tests = b.addRunArtifact(converter_tests);
 
     // Terminal module tests
     const term_tests = b.addTest(.{
@@ -140,15 +169,22 @@ pub fn build(b: *std.Build) void {
     });
     const run_term_tests = b.addRunArtifact(term_tests);
 
-    // Main termicam module tests
+    // Main dith module tests
     const mod_tests = b.addTest(.{
         .root_module = mod,
     });
     const run_mod_tests = b.addRunArtifact(mod_tests);
 
+    // CLI module tests
+    const cli_tests = b.addTest(.{
+        .root_module = cli_mod,
+    });
+    const run_cli_tests = b.addRunArtifact(cli_tests);
+
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&run_camera_tests.step);
-    test_step.dependOn(&run_ascii_tests.step);
+    test_step.dependOn(&run_converter_tests.step);
     test_step.dependOn(&run_term_tests.step);
     test_step.dependOn(&run_mod_tests.step);
+    test_step.dependOn(&run_cli_tests.step);
 }

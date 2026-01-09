@@ -1,5 +1,6 @@
 const std = @import("std");
-const camera = @import("camera");
+const types = @import("types");
+const Image = types.Image;
 
 /// Terminal dimensions
 pub const TermSize = struct {
@@ -37,7 +38,7 @@ pub const BrailleDimensions = struct {
 /// Calculate optimal Braille dimensions to fit image within terminal bounds
 /// while maintaining 1:1 pixel aspect ratio. Scales based on whichever dimension
 /// (width or height) is the limiting factor.
-pub fn calculateBrailleDimensions(image: camera.Image, term_size: TermSize) BrailleDimensions {
+pub fn calculateBrailleDimensions(image: Image, term_size: TermSize) BrailleDimensions {
     // Each Braille char = 2 pixels wide, 4 pixels tall
     const pixels_per_braille_width = 2;
     const pixels_per_braille_height = 4;
@@ -97,7 +98,7 @@ test "terminal size" {
 
 test "calculate Braille dimensions - width limited" {
     // Wide terminal, narrow image - width should be the limiting factor
-    const test_image = camera.Image{
+    const test_image = Image{
         .data = &[_]u8{0} ** 100,
         .width = 800,
         .height = 600,
@@ -117,7 +118,7 @@ test "calculate Braille dimensions - width limited" {
 
 test "calculate Braille dimensions - height limited" {
     // Narrow terminal, tall image - height should be the limiting factor
-    const tall_image = camera.Image{
+    const tall_image = Image{
         .data = &[_]u8{0} ** 100,
         .width = 800,
         .height = 1600,
@@ -137,7 +138,7 @@ test "calculate Braille dimensions - height limited" {
 
 test "calculate Braille dimensions - maintains aspect ratio" {
     // Square image 400x400 in square-ish terminal
-    const square_image = camera.Image{
+    const square_image = Image{
         .data = &[_]u8{0} ** 100,
         .width = 400,
         .height = 400,
@@ -157,7 +158,7 @@ test "calculate Braille dimensions - maintains aspect ratio" {
 
 test "calculate Braille dimensions - wide image in wide terminal" {
     // Wide image 1600x800 (2:1 aspect ratio) in wide terminal
-    const wide_image = camera.Image{
+    const wide_image = Image{
         .data = &[_]u8{0} ** 100,
         .width = 1600,
         .height = 800,
@@ -177,7 +178,7 @@ test "calculate Braille dimensions - wide image in wide terminal" {
 
 test "calculate Braille dimensions - minimum output" {
     // Very small image
-    const tiny_image = camera.Image{
+    const tiny_image = Image{
         .data = &[_]u8{0} ** 100,
         .width = 10,
         .height = 5,
@@ -194,7 +195,7 @@ test "calculate Braille dimensions - minimum output" {
 
 test "calculate Braille dimensions - 1080p in common terminal" {
     // Test with 1080p (1920x1080) in 160x45 terminal
-    const hd_image = camera.Image{
+    const hd_image = Image{
         .data = &[_]u8{0} ** 100,
         .width = 1920,
         .height = 1080,

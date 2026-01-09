@@ -1,0 +1,69 @@
+const std = @import("std");
+const types = @import("types");
+
+const c = @cImport({
+    @cInclude("stb_image.h");
+});
+
+pub const ImageError = error{
+    LoadFailed,
+    OutOfMemory,
+};
+
+/// Owned image data that must be freed
+pub const OwnedImage = struct {
+    data: []u8,
+    width: u32,
+    height: u32,
+    allocator: std.mem.Allocator,
+
+    /// Convert to Image for rendering
+    pub fn toImage(self: OwnedImage) types.Image {
+        return .{
+            .data = self.data,
+            .width = self.width,
+            .height = self.height,
+            .bytes_per_row = self.width,
+        };
+    }
+
+    /// Free the image data
+    pub fn deinit(self: *OwnedImage) void {
+        self.allocator.free(self.data);
+    }
+};
+
+/// Load image from file path, converting to grayscale
+pub fn load(allocator: std.mem.Allocator, path: []const u8) ImageError!OwnedImage {
+    // Null-terminate the path for C
+    const c_path = allocator.dupeZ(u8, path) catch return ImageError.OutOfMemory;
+    defer allocator.free(c_path);
+
+    var width: c_int = 0;
+    var height: c_int = 0;
+    var channels: c_int = 0;
+
+    // Load as grayscale (1 channel)
+    const data = c.stbi_load(c_path.ptr, &width, &height, &channels, 1);
+    if (data == null) {
+        return ImageError.LoadFailed;
+    }
+    defer c.stbi_image_free(data);
+
+    const w: u32 = @intCast(width);
+    const h: u32 = @intCast(height);
+    const size = w * h;
+
+    // Copy to Zig-managed memory
+    const owned_data = allocator.alloc(u8, size) catch {
+        return ImageError.OutOfMemory;
+    };
+    @memcpy(owned_data, data[0..size]);
+
+    return .{
+        .data = owned_data,
+        .width = w,
+        .height = h,
+        .allocator = allocator,
+    };
+}

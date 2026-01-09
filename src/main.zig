@@ -1,10 +1,11 @@
 const std = @import("std");
-const termicam = @import("termicam");
-const camera = @import("termicam").camera;
-const ascii = @import("termicam").ascii;
-const term = @import("termicam").term;
+const dith = @import("dith");
+const camera = dith.camera;
+const converter = dith.converter;
+const term = dith.term;
+const cli = dith.cli;
+const image = dith.image;
 const builtin = @import("builtin");
-const build_options = @import("build_options");
 
 /// Generic frame source interface for pluggable capture strategies
 const FrameSource = struct {
@@ -205,13 +206,83 @@ const CaptureStrategy = enum {
     pipelined, // Double-buffered background thread
 };
 
+/// Initialize converter based on CLI mode selection
+fn initConverter(mode: cli.Mode, allocator: std.mem.Allocator) !converter.Converter {
+    return switch (mode) {
+        .edge => |cfg| blk: {
+            const conv = try converter.EdgeConverter.init(allocator, cfg.threshold, cfg.invert);
+            break :blk conv.converter();
+        },
+        .atkinson => |cfg| blk: {
+            const conv = try converter.AtkinsonConverter.init(allocator, cfg.threshold, cfg.invert);
+            break :blk conv.converter();
+        },
+        .floyd_steinberg => |cfg| blk: {
+            const conv = try converter.FloydSteinbergConverter.init(allocator, cfg.threshold, cfg.invert);
+            break :blk conv.converter();
+        },
+    };
+}
+
 pub fn main() !void {
+    // Parse CLI arguments
+    const args = cli.parse() catch |err| {
+        cli.printErrorAndHelp(err);
+        std.process.exit(1);
+    } orelse {
+        // Help was requested
+        std.process.exit(0);
+    };
+
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
     // Get terminal size
     const term_size = try term.getTermSize();
+
+    // Handle file source (static image, render once and exit)
+    switch (args.source) {
+        .file => |file_config| {
+            var img = image.load(allocator, file_config.path) catch |err| {
+                var buffer: [256]u8 = undefined;
+                var writer = std.fs.File.stderr().writer(&buffer);
+                const stderr = &writer.interface;
+                const msg = switch (err) {
+                    image.ImageError.LoadFailed => "error: failed to load image\n",
+                    image.ImageError.OutOfMemory => "error: out of memory\n",
+                };
+                stderr.writeAll(msg) catch {};
+                stderr.flush() catch {};
+                std.process.exit(1);
+            };
+            defer img.deinit();
+
+            // Initialize converter based on mode
+            const conv = try initConverter(args.mode, allocator);
+            defer conv.deinit();
+
+            const frame = img.toImage();
+            const dims = term.calculateBrailleDimensions(frame, term_size);
+            const braille_text = try conv.convert(frame, dims.cols, dims.rows, allocator);
+            defer allocator.free(braille_text);
+
+            var stdout_buffer: [32768]u8 = undefined;
+            var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+            const stdout = &stdout_writer.interface;
+
+            try term.clearScreen(stdout);
+            try stdout.writeAll(braille_text);
+            try stdout.writeAll("\n");
+            try stdout.flush();
+
+            return;
+        },
+        .cam => {}, // Continue below
+    }
+
+    // Camera source
+    const cam_config = args.source.cam;
 
     // Initialize camera
     var cam = try camera.Camera.init();
@@ -221,22 +292,18 @@ pub fn main() !void {
     try cam.open();
     defer cam.close();
 
-    // Initialize Braille converter with build-time options
-    var converter = try ascii.BrailleConverter.init(
-        allocator,
-        build_options.edge_threshold,
-        build_options.invert,
-    );
-    defer converter.converter().deinit();
+    // Initialize converter based on mode
+    const conv = try initConverter(args.mode, allocator);
+    defer conv.deinit();
 
     // Warmup: Capture and discard frames to let camera auto-expose
     var i: u32 = 0;
-    while (i < build_options.warmup_frames) : (i += 1) {
+    while (i < cam_config.warmup) : (i += 1) {
         _ = try cam.captureFrame();
     }
 
-    // Initialize frame source based on build-time strategy configuration
-    const source = switch (comptime build_options.capture_strategy) {
+    // Initialize frame source based on CLI strategy configuration
+    const source = switch (cam_config.strategy) {
         .direct => blk: {
             var direct = try DirectCapture.init(allocator, &cam);
             break :blk direct.frameSource();
@@ -270,7 +337,7 @@ pub fn main() !void {
 
         // Convert to Braille (with optional timing for debug builds)
         const convert_start = if (builtin.mode == .Debug) std.time.nanoTimestamp() else 0;
-        const braille_text = try converter.imageToText(frame, dims.cols, dims.rows, allocator);
+        const braille_text = try conv.convert(frame, dims.cols, dims.rows, allocator);
         const convert_end = if (builtin.mode == .Debug) std.time.nanoTimestamp() else 0;
         defer allocator.free(braille_text);
 
