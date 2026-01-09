@@ -185,10 +185,10 @@ test "EdgeConverter edge detection" {
     const allocator = std.testing.allocator;
 
     var pixels = [_]u8{
-        0,   0,   255, 255,
-        0,   0,   255, 255,
-        0,   0,   255, 255,
-        0,   0,   255, 255,
+        0, 0, 255, 255,
+        0, 0, 255, 255,
+        0, 0, 255, 255,
+        0, 0, 255, 255,
     };
 
     const test_image = Image{
