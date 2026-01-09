@@ -74,6 +74,15 @@ pub fn build(b: *std.Build) void {
         },
     });
 
+    const bayer_mod = b.addModule("converters/bayer", .{
+        .root_source_file = b.path("src/converters/bayer.zig"),
+        .target = target,
+        .imports = &.{
+            .{ .name = "common", .module = common_mod },
+            .{ .name = "blue_noise", .module = blue_noise_mod },
+        },
+    });
+
     // Converter module (aggregates all converter submodules)
     const converter_mod = b.addModule("converter", .{
         .root_source_file = b.path("src/converter.zig"),
@@ -84,6 +93,7 @@ pub fn build(b: *std.Build) void {
             .{ .name = "converters/atkinson", .module = atkinson_mod },
             .{ .name = "converters/floyd_steinberg", .module = floyd_steinberg_mod },
             .{ .name = "converters/blue_noise", .module = blue_noise_mod },
+            .{ .name = "converters/bayer", .module = bayer_mod },
         },
     });
 

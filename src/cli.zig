@@ -38,6 +38,10 @@ pub const Mode = union(enum) {
         threshold: u8 = 128,
         invert: bool = false,
     },
+    bayer: struct {
+        threshold: u8 = 128,
+        invert: bool = false,
+    },
 };
 
 // =============================================================================
@@ -313,6 +317,10 @@ pub fn printHelp() void {
         \\      +threshold=<N>     Threshold adjustment 0-255 (default: 128)
         \\      +invert            Invert output
         \\
+        \\    bayer              Bayer ordered dithering (fast, retro crosshatch)
+        \\      +threshold=<N>     Threshold adjustment 0-255 (default: 128)
+        \\      +invert            Invert output
+        \\
         \\EXAMPLES:
         \\    dith +source=cam +mode=edge
         \\    dith +source=cam +mode=blue_noise
@@ -443,6 +451,19 @@ test "parse blue_noise mode" {
         .blue_noise => |bn| {
             try std.testing.expectEqual(@as(u8, 64), bn.threshold);
             try std.testing.expectEqual(false, bn.invert);
+        },
+        else => unreachable,
+    }
+}
+
+test "parse bayer mode" {
+    var iter = SliceIter{ .slice = &.{ "dith", "+source=cam", "+mode=bayer", "+invert" } };
+    const args = try parseFromIter(&iter);
+    try std.testing.expect(args != null);
+    switch (args.?.mode) {
+        .bayer => |b| {
+            try std.testing.expectEqual(@as(u8, 128), b.threshold); // default
+            try std.testing.expectEqual(true, b.invert);
         },
         else => unreachable,
     }
